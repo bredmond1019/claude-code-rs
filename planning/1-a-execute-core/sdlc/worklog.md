@@ -29,3 +29,6 @@ Validated: gating checks (fast tripwire)
 What: Ran the full validation suite (cargo fmt --check, clippy -D warnings, test, build --release) for spec 1-a-execute-core — all pass clean with no warnings; 12 tests pass (1 ignored live smoke test as expected).
 Decisions: Task 6 is a pure validation gate with no files/acceptance_criteria listed in tasks.json; since all checks passed with zero code changes needed, no commit was made (working tree was already clean).
 Validated: gating checks (fast tripwire)
+
+## Docs
+Patched: docs/architecture.md, docs/api.md
