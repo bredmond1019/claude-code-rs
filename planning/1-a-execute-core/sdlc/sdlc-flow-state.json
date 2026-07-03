@@ -2,10 +2,10 @@
   "spec_slug": "1-a-execute-core",
   "branch": "1-a-execute-core-flow",
   "started_at": "2026-07-03T20:13:33Z",
-  "updated_at": "2026-07-03T20:22:36Z",
+  "updated_at": "2026-07-03T20:25:04Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/claude-code-rs/trees/1-a-execute-core-flow",
   "status": "running",
-  "current_task": 4,
+  "current_task": 5,
   "tasks": {
     "1": {
       "status": "passed",
@@ -71,6 +71,22 @@
       ],
       "files_changed": [
         "tests/argv.rs"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "5": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added tests/parse_schema.rs, an integration test that feeds canned claude CLI JSON (today's schema: total_cost_usd, top-level usage, model) through claude_code_rs::parse::parse_result and asserts the expected Outcome, plus a case with an unrecognized content-block type that still parses via the Unknown forward-compat variant.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Used the already-public parse_result/ContentBlock API from src/parse.rs (delivered by task 2) rather than adding new public surface",
+        "Included a second content block alongside the unknown one in the forward-compat test to also verify known/unknown blocks coexist in the same parse"
+      ],
+      "files_changed": [
+        "tests/parse_schema.rs"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -171,13 +187,29 @@
         "filesReadKb": null,
         "inTokEst": 586,
         "outTok": 3193
+      },
+      {
+        "label": "implement-5-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 3451
+      },
+      {
+        "label": "test-5-1",
+        "model": "haiku",
+        "promptTokEst": 586,
+        "filesReadKb": null,
+        "inTokEst": 586,
+        "outTok": 2054
       }
     ],
     "total": {
-      "promptTokEst": 7272,
+      "promptTokEst": 8836,
       "filesReadKb": 0,
-      "inTokEst": 7272,
-      "outTok": 41743
+      "inTokEst": 8836,
+      "outTok": 47248
     }
   }
 }

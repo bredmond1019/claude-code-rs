@@ -19,3 +19,8 @@ Validated: gating checks (fast tripwire)
 What: tests/argv.rs now locks Config::build_args's exact argv output (minimal, full, and resume-without-continue cases) as an integration test.
 Decisions: Added a third case (resume without continue_session) beyond the two required by the spec, to additionally lock that --resume works independently of --continue
 Validated: gating checks (fast tripwire)
+
+## Task 5 — PASSED (1 attempt)
+What: Added tests/parse_schema.rs, an integration test that feeds canned claude CLI JSON (today's schema: total_cost_usd, top-level usage, model) through claude_code_rs::parse::parse_result and asserts the expected Outcome, plus a case with an unrecognized content-block type that still parses via the Unknown forward-compat variant.
+Decisions: Used the already-public parse_result/ContentBlock API from src/parse.rs (delivered by task 2) rather than adding new public surface; Included a second content block alongside the unknown one in the forward-compat test to also verify known/unknown blocks coexist in the same parse
+Validated: gating checks (fast tripwire)
