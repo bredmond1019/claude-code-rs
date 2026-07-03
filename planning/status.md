@@ -5,7 +5,7 @@ description: Current state and progress tracker for claude-code-rs.
 doc_id: status
 layer: [factory]
 status: active
-timestamp: "2026-07-03"
+timestamp: "2026-07-03T19:58:48Z"
 now: "Phase 0, Block A — Foundation setup — Done"
 next: "Define Phase 0, Block B via /generate-tasks"
 blocked: []
