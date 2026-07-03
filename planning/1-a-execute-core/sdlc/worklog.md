@@ -14,3 +14,8 @@ Validated: gating checks (fast tripwire)
 What: Added async execute() in src/execute.rs that resolves the claude binary (CLAUDE_BINARY env or PATH), spawns it via tokio::process::Command with kill_on_drop and a whole-call timeout, parses stdout via parse::parse_result, and wired it into lib.rs; includes a unit test for binary resolution and an #[ignore]d live smoke test.
 Decisions: Used Command::output() (captures stdout+stderr, awaits exit) inside the single tokio::time::timeout future rather than manual spawn+wait, since it's simpler and still respects kill_on_drop(true) on timeout/cancel.; Chose a 300s DEFAULT_TIMEOUT constant for the whole-call timeout since the spec left the exact duration unspecified, only requiring it be one whole-call timeout (not per-line).; Did not explicitly set env on the Command since tokio::process::Command inherits the parent process env by default, satisfying the 'inheriting the env' requirement without extra code.
 Validated: gating checks (fast tripwire)
+
+## Task 4 — PASSED (1 attempt)
+What: tests/argv.rs now locks Config::build_args's exact argv output (minimal, full, and resume-without-continue cases) as an integration test.
+Decisions: Added a third case (resume without continue_session) beyond the two required by the spec, to additionally lock that --resume works independently of --continue
+Validated: gating checks (fast tripwire)
