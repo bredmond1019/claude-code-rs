@@ -41,11 +41,10 @@ None known at initialization.
 ## Build / test / run
 
 ```bash
-# Replace with this project's actual commands.
-# <install>
-# <build>
-# <test>
-# <run>
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+cargo build --release
 ```
 
 > The SDLC pipeline reads its validation suite from `planning/harness.json` (not from this

@@ -16,7 +16,7 @@ related: [context, master-plan, planning-index, knowledge, memory]
 # STATUS — Current State & Progress
 
 **Last updated:** 2026-07-03 — Project initialized
-**Current focus:** Phase 0, Block A — Foundation setup
+**Current focus:** 0-a-foundation-setup
 
 ---
 
@@ -60,7 +60,7 @@ related: [context, master-plan, planning-index, knowledge, memory]
 ### Phase 0 — Foundation
 | Block | What | Status | Notes |
 |---|---|---|---|
-| Block A | Foundation setup | Not started | Initialize codebase and planning infrastructure |
+| Block A | Foundation setup | In progress | Initialize codebase and planning infrastructure |
 
 <!-- Add one sub-table per phase as the plan is fleshed out. -->
 
