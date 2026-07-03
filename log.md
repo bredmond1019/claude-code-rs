@@ -16,6 +16,41 @@ related: [status, context]
 
 ---
 
+## 2026-07-03 — 1-a-execute-core complete
+
+Ran the `sdlc-flow` pipeline for spec `1-a-execute-core` (Phase 1, Block A — `execute` core,
+inherit-env / `CC.1.A`) through all six tasks to a PASS verdict. Task 1 added `Config`
+(ported CLI flags: system prompt, model, allowed/disallowed tools, continue/resume, plus
+env/cwd isolation-seam placeholders) and a public `build_args()` argv builder that always
+appends `--output-format json`. Task 2 added a schema-locked `parse_result()`/`Outcome` in
+`src/parse.rs` reading today's CLI JSON (`total_cost_usd`, top-level `usage`, `model`) with a
+`ContentBlock` enum carrying an `Unknown` forward-compat variant for future content-block types.
+Task 3 added the async `execute()` entry point over `tokio::process::Command`, resolving the
+`claude` binary via `CLAUDE_BINARY` env or `PATH`, with `kill_on_drop(true)` and a single
+whole-call `tokio::time::timeout` (300s default) wrapping `Command::output()`. Tasks 4 and 5
+locked the argv builder and the parse schema (including the unknown-content-block case) with
+integration tests in `tests/argv.rs` and `tests/parse_schema.rs`. Task 6 ran the full validation
+suite (fmt, clippy -D warnings, test, build --release) clean with 12 passing tests (1 ignored
+live smoke test). Review returned PASS on the first attempt with no findings; docs
+(`docs/architecture.md`, `docs/api.md`) were patched to match. No genuine deviations from the
+spec — all in-task decisions (e.g. `Command::output()` inside a single timeout future rather than
+manual spawn+wait, a 300s default timeout, relying on `tokio::process::Command`'s default env
+inheritance) were in-scope implementation choices, not scope changes. Next: define Phase 1,
+Block B via `/generate-tasks`.
+
+```
+7c97452 chore: flow state — docs
+9aa9ac0 docs: update docs for 1-a-execute-core
+3c8b61b chore: flow state — task 6 passed
+fe59621 chore: flow state — task 5 passed
+30ecfb3 feat: implement 1-a-execute-core-task5
+a11c1cc chore: flow state — task 4 passed
+058a895 feat: implement 1-a-execute-core-task4
+3feff2f chore: flow state — task 3 passed
+```
+
+---
+
 ## 2026-07-03 — SDLC pipeline close-out, code review, GitHub repo, handoff
 
 **What:** Ran the full `sdlc-run` pipeline for spec `0-a-foundation-setup` end to end
