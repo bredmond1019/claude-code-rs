@@ -3,12 +3,13 @@
 mod error;
 
 pub mod config;
-pub mod execute {}
+pub mod execute;
 pub mod parse;
 pub mod isolation {}
 
 pub use config::Config;
 pub use error::{Error, Result};
+pub use execute::execute;
 pub use parse::Outcome;
 
 #[cfg(test)]
