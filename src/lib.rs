@@ -1,0 +1,24 @@
+//! Lean async Rust SDK that runs the `claude` CLI as a subprocess on a flat-rate subscription.
+
+mod error;
+
+pub mod config {}
+pub mod execute {}
+pub mod parse {}
+pub mod isolation {}
+
+pub use error::{Error, Result};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_composes() {
+        let ok: Result<()> = Ok(());
+        assert!(ok.is_ok());
+
+        let err: Result<()> = Err(Error::Timeout);
+        assert!(err.is_err());
+    }
+}
