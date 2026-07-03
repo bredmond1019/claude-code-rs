@@ -5,14 +5,14 @@ description: Decomposed task spec for CC.1.A — the async execute() entry point
 doc_id: 1-a-execute-core-tasks
 layer: [engine]
 project: claude-code-rs
-status: draft
+status: active
 keywords: [execute, subprocess, argv builder, parser, total_cost_usd, kill_on_drop, forward-compat]
 related: [master-plan, status, planning-index, 0-a-foundation-setup-tasks]
 ---
 
 # Task Spec — Phase 1, Block A — execute core, inherit-env
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-07-03 (PASS)
 
 ## Goal
 Ship `async fn execute(config: &Config, prompt: &str) -> Result<Outcome>` — the single subscription
