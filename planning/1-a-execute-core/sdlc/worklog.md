@@ -24,3 +24,8 @@ Validated: gating checks (fast tripwire)
 What: Added tests/parse_schema.rs, an integration test that feeds canned claude CLI JSON (today's schema: total_cost_usd, top-level usage, model) through claude_code_rs::parse::parse_result and asserts the expected Outcome, plus a case with an unrecognized content-block type that still parses via the Unknown forward-compat variant.
 Decisions: Used the already-public parse_result/ContentBlock API from src/parse.rs (delivered by task 2) rather than adding new public surface; Included a second content block alongside the unknown one in the forward-compat test to also verify known/unknown blocks coexist in the same parse
 Validated: gating checks (fast tripwire)
+
+## Task 6 — PASSED (1 attempt)
+What: Ran the full validation suite (cargo fmt --check, clippy -D warnings, test, build --release) for spec 1-a-execute-core — all pass clean with no warnings; 12 tests pass (1 ignored live smoke test as expected).
+Decisions: Task 6 is a pure validation gate with no files/acceptance_criteria listed in tasks.json; since all checks passed with zero code changes needed, no commit was made (working tree was already clean).
+Validated: gating checks (fast tripwire)
