@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-07-03T19:58:48Z"
+timestamp: "2026-07-03T20:42:32Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,30 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-07-03 — PR #1 merged, CC.1.A closed out
+
+**What:** Ran `/sdlc-flow` for spec `1-a-execute-core` (Phase 1, Block A — `CC.1.A`, "execute
+core, inherit-env") in a shared worktree: 6 tasks implemented (`src/config.rs` `Config` +
+`build_args`, `src/execute.rs` async `execute()` over `tokio::process::Command` with
+`kill_on_drop` + whole-call timeout, `src/parse.rs` schema-locked `Outcome`/`Usage`/`ContentBlock`
+with a forward-compat `Unknown` variant), argv + parse-schema locked with integration tests, one
+consolidated review (PASS, no findings), docs patched (`docs/api.md`, `docs/architecture.md`), PR
+#1 opened on GitHub. Ran `/code-review low` on the branch diff — no findings. Merged PR #1 into
+`main` via `/clean-worktree` (fast-forward failed because `main` had one divergent unrelated
+commit — a `state.json` seed — so merged with `--no-ff`, merge commit `b4d1610`); removed the
+worktree and deleted the local + remote branch `1-a-execute-core-flow`; GitHub auto-marked PR #1
+merged. Wrote `planning/handoff.md` for the next session, whose first command is
+`/generate-tasks` for Phase 1, Block B (`CC.1.B` — Credential isolation).
+
+**Why:** Close out `CC.1.A` cleanly end to end — implementation, review, docs, and merge — and
+leave a crisp resumption point for the next session rather than an implicit "pick it up from
+status.md" handoff.
+
+**Refs:** spec `1-a-execute-core`; PR #1 (https://github.com/bredmond1019/claude-code-rs/pull/1);
+merge commit `b4d1610`.
 
 ---
 
