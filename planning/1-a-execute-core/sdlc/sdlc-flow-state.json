@@ -2,10 +2,10 @@
   "spec_slug": "1-a-execute-core",
   "branch": "1-a-execute-core-flow",
   "started_at": "2026-07-03T20:13:33Z",
-  "updated_at": "2026-07-03T20:17:01Z",
+  "updated_at": "2026-07-03T20:19:51Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/claude-code-rs/trees/1-a-execute-core-flow",
   "status": "running",
-  "current_task": 2,
+  "current_task": 3,
   "tasks": {
     "1": {
       "status": "passed",
@@ -37,6 +37,24 @@
       ],
       "files_changed": [
         "src/parse.rs",
+        "src/lib.rs"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "3": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added async execute() in src/execute.rs that resolves the claude binary (CLAUDE_BINARY env or PATH), spawns it via tokio::process::Command with kill_on_drop and a whole-call timeout, parses stdout via parse::parse_result, and wired it into lib.rs; includes a unit test for binary resolution and an #[ignore]d live smoke test.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Used Command::output() (captures stdout+stderr, awaits exit) inside the single tokio::time::timeout future rather than manual spawn+wait, since it's simpler and still respects kill_on_drop(true) on timeout/cancel.",
+        "Chose a 300s DEFAULT_TIMEOUT constant for the whole-call timeout since the spec left the exact duration unspecified, only requiring it be one whole-call timeout (not per-line).",
+        "Did not explicitly set env on the Command since tokio::process::Command inherits the parent process env by default, satisfying the 'inheriting the env' requirement without extra code."
+      ],
+      "files_changed": [
+        "src/execute.rs",
         "src/lib.rs"
       ],
       "commit": "",
@@ -106,13 +124,29 @@
         "filesReadKb": null,
         "inTokEst": 586,
         "outTok": 1847
+      },
+      {
+        "label": "implement-3-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 4440
+      },
+      {
+        "label": "test-3-1",
+        "model": "haiku",
+        "promptTokEst": 586,
+        "filesReadKb": null,
+        "inTokEst": 586,
+        "outTok": 2195
       }
     ],
     "total": {
-      "promptTokEst": 4144,
+      "promptTokEst": 5708,
       "filesReadKb": 0,
-      "inTokEst": 4144,
-      "outTok": 29095
+      "inTokEst": 5708,
+      "outTok": 35730
     }
   }
 }
