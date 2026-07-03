@@ -12,7 +12,7 @@ related: [master-plan, status, planning-index]
 
 # Task Spec — Phase 0, Block A — Foundation setup
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-07-03
 
 ## Goal
 Scaffold the `claude-code-rs` crate — lean dep set, a warning-free module skeleton, a crate-level

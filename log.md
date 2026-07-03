@@ -16,6 +16,31 @@ related: [status, context]
 
 ---
 
+## 2026-07-03 — 0-a-foundation-setup complete
+
+Implemented and closed out Phase 0, Block A — Foundation setup. Scaffolded the `claude-code-rs`
+crate: lean dep set (`tokio` with `process`/`rt`/`macros`/`time` features only, `serde`,
+`serde_json`, `thiserror`, `which`), a warning-free module skeleton (`config`, `execute`, `parse`,
+`isolation`, `error`), and a crate-level `Error`/`Result` via `thiserror` re-exported from
+`lib.rs`. Filled in the Rust SDLC harness profile (`planning/harness.json`: fmt/clippy/test/build,
+all gating; `uiTest.enabled: false`) and kept `CLAUDE.md`'s *Build / test / run* block in sync.
+Testing passed all four validation checks (fmt, clippy, test, build) cleanly, and review returned
+a PASS verdict on the first attempt — all acceptance criteria met, no gating issues found.
+Documentation was patched to reflect the completed scaffold. Notable decision from implement: pinned
+`edition = "2021"` (per spec) over `cargo init`'s newer `2024` default, and pinned `thiserror` to
+major version `1` and `which` to major version `6` rather than their newer major lines — both
+deliberate, spec-consistent choices, not deviations. Next: define Phase 0, Block B via
+`/generate-tasks`.
+
+```
+3cd5fc6 docs: update docs for 0-a-foundation-setup
+cf28584 feat: implement 0-a-foundation-setup
+4d5671f chore: add spec for 0-a-foundation-setup
+e6806a4 Project Init
+```
+
+---
+
 ## 2026-07-03
 
 Project initialized from `base-template` (commit `9ea6decce523300fb82ad18a65f50272edab7702`) via `/new-project`.

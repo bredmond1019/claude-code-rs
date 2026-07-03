@@ -6,8 +6,8 @@ doc_id: status
 layer: [factory]
 status: active
 timestamp: "2026-07-03"
-now: "Phase 0, Block A — Foundation setup"
-next: "Define Phase 0 tasks via /generate-tasks"
+now: "Phase 0, Block A — Foundation setup — Done"
+next: "Define Phase 0, Block B via /generate-tasks"
 blocked: []
 keywords: [status, progress tracker, current focus, blocks]
 related: [context, master-plan, planning-index, knowledge, memory]
@@ -15,8 +15,8 @@ related: [context, master-plan, planning-index, knowledge, memory]
 
 # STATUS — Current State & Progress
 
-**Last updated:** 2026-07-03 — Project initialized
-**Current focus:** 0-a-foundation-setup
+**Last updated:** 2026-07-03
+**Current focus:** Phase 0, Block B — define via `/generate-tasks`
 
 ---
 
@@ -35,8 +35,8 @@ related: [context, master-plan, planning-index, knowledge, memory]
 > Working board — keep all five queues live. **Never end a meaningful session with every queue
 > empty.** The headlines of **now / next / blocked** mirror the frontmatter scalars above.
 
-- **now** — Phase 0, Block A — Foundation setup
-- **next** — Define Phase 0 tasks (`/generate-tasks`)
+- **now** — Phase 0, Block A — Foundation setup — Done
+- **next** — Define Phase 0, Block B tasks (`/generate-tasks`)
 - **blocked** — _nothing yet — each entry names its blocker and the smallest missing answer_
 - **improve** — _self-improvement backlog: eval gaps, flaky workflows, repeated failures, missing skills, stale assumptions_
 - **recurring** — _schedules, monitors, sweeps, automations_
@@ -60,7 +60,7 @@ related: [context, master-plan, planning-index, knowledge, memory]
 ### Phase 0 — Foundation
 | Block | What | Status | Notes |
 |---|---|---|---|
-| Block A | Foundation setup | In progress | Initialize codebase and planning infrastructure |
+| Block A | Foundation setup | Done | Scaffolded crate (lean deps, module skeleton, thiserror Error/Result), Rust SDLC harness in place; PASS on first review |
 
 <!-- Add one sub-table per phase as the plan is fleshed out. -->
 
