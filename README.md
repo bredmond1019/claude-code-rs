@@ -11,6 +11,8 @@ related: [context, master-plan, planning-index]
 
 # claude-code-rs
 
+> Part of the **Bastion** ecosystem — see the [bastion-os](https://github.com/bredmond1019/bastion-os) front door for the full architecture.
+
 A lean async Rust SDK that runs Claude Code as a subprocess on Brandon's flat-rate subscription (not API credits).
 
 ## Prerequisites
