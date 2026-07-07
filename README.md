@@ -56,6 +56,10 @@ claude-code-rs/
 | [planning/status.md](planning/status.md) | Current progress |
 | [planning/harness.json](planning/harness.json) | SDLC validation/UI-test config (see `harness.examples.md`) |
 
+## Roadmap / Known limitations
+
+- **Zero-Allocation Deserialization:** The crate currently buffers content blocks through an intermediate `serde_json::Value`. Implementing a zero-alloc `serde::de::Visitor` is a planned refinement to avoid the round-trip.
+
 ---
 
 *Initialized 2026-07-03 from `base-template` (commit `9ea6decce523300fb82ad18a65f50272edab7702`).*
