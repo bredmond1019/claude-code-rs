@@ -19,6 +19,12 @@ pub enum Error {
     /// The CLI's JSON output could not be parsed into the expected shape.
     #[error("failed to parse claude output: {0}")]
     Parse(#[from] serde_json::Error),
+
+    /// Setting up an isolated `CLAUDE_CONFIG_DIR` (temp dir creation, or a
+    /// credentials/`.claude.json` source that exists but could not be read
+    /// or copied) failed.
+    #[error("failed to set up isolated config dir: {0}")]
+    Isolation(std::io::Error),
 }
 
 /// Crate-wide `Result` alias using [`Error`].

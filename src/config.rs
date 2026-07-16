@@ -2,8 +2,9 @@
 
 /// Configuration for a single `claude` CLI invocation.
 ///
-/// Covers the ported flags from `claude-sdk-rs`'s config plus placeholder
-/// env/cwd override fields the isolation seam (`CC.1.B`) will populate later.
+/// Covers the ported flags from `claude-sdk-rs`'s config plus the env/cwd
+/// override fields and the opt-in credential isolation switch consumed by
+/// `execute()` (`CC.1.B`).
 // The flags map one-to-one onto independent `claude` CLI options, so grouping
 // them into a sub-struct would not improve clarity.
 #[allow(clippy::struct_excessive_bools)]
@@ -30,13 +31,21 @@ pub struct Config {
     /// When set, resumes the given session id (`--resume <id>`).
     pub resume: Option<String>,
 
-    /// Placeholder: working directory override for the isolation seam (`CC.1.B`).
-    /// Not yet consumed by `execute()`.
+    /// Working directory override for the spawned `claude` process. When set,
+    /// `execute()` applies it via `Command::current_dir`.
     pub cwd: Option<std::path::PathBuf>,
 
-    /// Placeholder: extra environment variables for the isolation seam (`CC.1.B`).
-    /// Not yet consumed by `execute()`.
+    /// Extra environment variables applied to the spawned `claude` process via
+    /// `Command::envs`, on top of the inherited environment.
     pub env: Vec<(String, String)>,
+
+    /// Opt-in credential isolation switch. When `true`, `execute()` runs the
+    /// subprocess under a temp `CLAUDE_CONFIG_DIR` with a redacted copy of the
+    /// credentials (see the `isolation` module), so a concurrent subprocess
+    /// session cannot log out an interactive session. Defaults to `false`
+    /// (inherited env, no isolation) to keep the default execution path
+    /// unchanged.
+    pub isolated: bool,
 }
 
 impl Config {
