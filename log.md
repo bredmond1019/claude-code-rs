@@ -16,6 +16,63 @@ related: [status, context]
 
 ---
 
+## 2026-07-16 — CLI schema drift fixed against real captured fixtures (D2); `ContentBlock` deleted
+
+**What:** Unplanned cross-repo fix, triggered by `engine-rs` EN.2.A's failing live test
+(`missing field "model"`). Root cause was not a narrow field rename but a **provenance failure**:
+this crate asserted the `claude` CLI's schema in seven places — the `parse.rs` module doc, three
+unit tests, `tests/parse_schema.rs`, `docs/api.md`, `docs/architecture.md`, `planning/knowledge.md`,
+and the `CC.1.A` row in `status.md` — and all seven agreed with each other while all seven were
+wrong. Every fixture had been hand-written to match the parser rather than captured from the CLI, so
+the tests asserted only that the parser agreed with itself. Two of the docs specifically bragged
+about being locked onto "today's" schema.
+
+Captured real CLI 2.1.211 output by hand first (success + a genuine HTTP-404 error envelope), read
+it, and only then wrote code. Against `Outcome` that revealed:
+
+1. **`model` no longer exists at the top level** — it's a *key* inside `modelUsage`. Required with
+   no default, so this hard-failed the parse. The visible bug.
+2. **`content` blocks no longer exist** — response text is a top-level `result` string. `content`
+   carried `#[serde(default)]`, so this degraded **silently** to `""`. Masked only by the louder
+   `model` failure: fixing `model` alone would have converted a crash into quiet data loss.
+3. **Top-level `content` appears never to have existed** in the `--output-format json` envelope. It
+   was invented by the first fixture author and then defended by three tests.
+
+Three further things the capture surfaced that no hand-written fixture would have:
+**`subtype` lies** (the error envelope reports `subtype: "success"` alongside `is_error: true`);
+**two failure modes indistinguishable by exit code** (a CLI failure leaves stdout empty with the
+message on stderr; an API failure returns a well-formed envelope with an *empty* stderr and the
+message inside `result`); and **`modelUsage` carries per-model `costUSD`**.
+
+Shipped in `7daab1c`: fixtures + `tests/fixtures/README.md` (provenance, redaction list, re-capture
+procedure, and a "we depend on / we deliberately ignore" table); `Outcome` reshaped to mirror the
+wire (`model_usage: BTreeMap` — not `HashMap`, whose per-process iteration randomization would make
+the tiebreak silently flaky; required `text`; `is_error`; `api_error_status`) with `primary_model()`
+as a documented *heuristic* (cost → output tokens → key order) rather than a field disguised as CLI
+ground truth; `ContentBlock` + helper + custom `Deserialize` deleted (~50 lines, 3 tests);
+`Error::Cli`/`Error::Api` split; 6 tests repointed off `outcome.model` (4 in `execute.rs` smuggling
+assertions through it, 2 in `tests/isolation.rs`); `tests/parse_schema.rs` replaced with conformance
+tests over the real fixtures plus an `#[ignore]`d **drift canary** that diffs live CLI output against
+the fixture and fails in both directions. The canary was verified to actually fire by doctoring the
+fixture — a canary that can't fail is the very sin being fixed. 38 tests green.
+
+Adopted a **leniency rule**, since the opposite instinct caused this: required (loud) when absence is
+indistinguishable from a legitimate value (`text` — a default renders removal as an empty reply);
+defaulted (lenient) when absence merely costs detail (`api_error_status`).
+
+**Why:** `engine-rs` EN.2.B (a cost/token budget gate) reads cost and usage straight off `Outcome`
+and could not be built correctly on a parser that hard-failed. The durable output is a convention,
+not a document: **the counterparty produces the fixture, the consumer's test parses it, the doc
+records provenance.** A versioned `cli-contract.md` was explicitly rejected — a contract needs two
+consenting parties, and Anthropic never agreed to one, so semver/changelog/re-pin are inert and a
+version number would imply a verification the doc cannot perform. See D2's Rejected Alternatives.
+
+**Refs:** commit `7daab1c`, `planning/decisions/D2-cli-schema-provenance.md`,
+`tests/fixtures/README.md`, `engine-rs` commit `4c0a950` (consumer), engine-rs D4 (transport
+boundary — correctly predicted this was upstream, not an engine-rs defect)
+
+---
+
 ## 2026-07-15 — 1-b-credential-isolation closed out, PR #2 open
 
 **What:** Closed out `1-b-credential-isolation` (`CC.1.B`, Credential isolation). Ran
