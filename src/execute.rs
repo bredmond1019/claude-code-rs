@@ -52,6 +52,10 @@ fn resolve_binary() -> Result<PathBuf> {
 ///   dir cannot be built.
 /// - [`Error::Spawn`] if the process fails to spawn or its output cannot be read.
 /// - [`Error::Timeout`] if the call does not complete within the timeout.
+/// - [`Error::Cli`] if the CLI produced no output envelope at all (bad argv, missing
+///   prompt) — the message is on stderr.
+/// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
+///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
 pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
     let binary = resolve_binary()?;
@@ -89,7 +93,36 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
         let output = command.output().await.map_err(Error::Spawn)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        parse::parse_result(&stdout)
+
+        // Two distinct failure modes, and the exit code alone cannot tell them
+        // apart — both exit non-zero (verified against CLI 2.1.211):
+        //
+        //  * CLI failure (bad flag, missing prompt): stdout empty, message on stderr.
+        //  * API failure (unroutable model, outage):  stdout carries a well-formed
+        //    envelope with `is_error: true`, and stderr is *empty* — the message
+        //    is in the JSON's `result` field.
+        //
+        // So dispatch on stdout's emptiness, not on the exit status. Reporting
+        // stderr for the API case would surface an empty string.
+        if stdout.trim().is_empty() {
+            return Err(Error::Cli {
+                status: output.status.code(),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            });
+        }
+
+        let outcome = parse::parse_result(&stdout)?;
+
+        // `is_error` is the only trustworthy signal here: the envelope reports
+        // `subtype: "success"` even when the call failed.
+        if outcome.is_error {
+            return Err(Error::Api {
+                status: outcome.api_error_status,
+                message: outcome.text,
+            });
+        }
+
+        Ok(outcome)
     };
 
     let result = match tokio::time::timeout(DEFAULT_TIMEOUT, call).await {
@@ -142,34 +175,43 @@ mod tests {
     }
 
     /// Writes an executable shell script that ignores argv, echoes `$PWD` and
-    /// the given env var (or `<unset>`) as the `model` field of a minimal
+    /// the given env var (or `<unset>`) as the `result` field of a minimal
     /// valid `Outcome` JSON blob, then exits 0. Used as a stand-in
     /// `CLAUDE_BINARY` so tests can observe what `execute()` actually applied
     /// to the child `Command` without running the real `claude` CLI.
+    ///
+    /// `result` is the smuggling channel because it is the only required free-text
+    /// field on the envelope. (It was `model` until 2026-07-16, when that field
+    /// turned out never to have existed — see `tests/fixtures/README.md`.)
     #[cfg(unix)]
     fn fake_binary_reporting(env_var: &str) -> (tempfile::TempDir, PathBuf) {
+        write_fake_binary(&format!(
+            "val=\"${{{env_var}:-<unset>}}\"\nprintf '{{\"total_cost_usd\":0.0,\"usage\":{{}},\"is_error\":false,\"result\":\"%s|%s\"}}' \"$val\" \"$PWD\"\n"
+        ))
+    }
+
+    /// Writes an executable `/bin/sh` script with `body` and returns it as a
+    /// stand-in `CLAUDE_BINARY`. The `TempDir` must be held for the script's
+    /// lifetime.
+    #[cfg(unix)]
+    fn write_fake_binary(body: &str) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("temp dir");
         let script_path = dir.path().join("fake-claude.sh");
         let mut file = std::fs::File::create(&script_path).expect("create script");
-        writeln!(
-            file,
-            "#!/bin/sh\nval=\"${{{env_var}:-<unset>}}\"\nprintf '{{\"total_cost_usd\":0.0,\"usage\":{{}},\"model\":\"%s|%s\"}}' \"$val\" \"$PWD\"\n"
-        )
-        .expect("write script");
+        writeln!(file, "#!/bin/sh\n{body}").expect("write script");
         drop(file);
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-                .expect("chmod +x");
-        }
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod +x");
 
         (dir, script_path)
     }
 
+    /// As [`run_with_fake_binary`], but returns the `Result` rather than unwrapping —
+    /// for the failure-path tests.
     #[cfg(unix)]
-    fn run_with_fake_binary(script_path: &std::path::Path, config: &Config) -> Outcome {
+    fn try_run_with_fake_binary(script_path: &std::path::Path, config: &Config) -> Result<Outcome> {
         let _guard = CLAUDE_BINARY_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -190,7 +232,12 @@ mod tests {
             std::env::remove_var("CLAUDE_BINARY");
         }
 
-        result.expect("fake execute should succeed")
+        result
+    }
+
+    #[cfg(unix)]
+    fn run_with_fake_binary(script_path: &std::path::Path, config: &Config) -> Outcome {
+        try_run_with_fake_binary(script_path, config).expect("fake execute should succeed")
     }
 
     #[cfg(unix)]
@@ -207,10 +254,10 @@ mod tests {
 
         let outcome = run_with_fake_binary(&script_path, &config);
         let reported_cwd = outcome
-            .model
+            .text
             .split('|')
             .nth(1)
-            .expect("model carries var|cwd");
+            .expect("result carries var|cwd");
 
         assert_eq!(
             std::fs::canonicalize(reported_cwd).expect("canonicalize reported cwd"),
@@ -233,10 +280,10 @@ mod tests {
 
         let outcome = run_with_fake_binary(&script_path, &config);
         let reported_var = outcome
-            .model
+            .text
             .split('|')
             .next()
-            .expect("model carries var|cwd");
+            .expect("result carries var|cwd");
 
         assert_eq!(reported_var, "isolation-seam-value");
     }
@@ -251,10 +298,10 @@ mod tests {
 
         let outcome = run_with_fake_binary(&script_path, &config);
         let reported_var = outcome
-            .model
+            .text
             .split('|')
             .next()
-            .expect("model carries var|cwd");
+            .expect("result carries var|cwd");
 
         assert_eq!(reported_var, "<unset>");
     }
@@ -271,10 +318,10 @@ mod tests {
 
         let outcome = run_with_fake_binary(&script_path, &config);
         let reported_var = outcome
-            .model
+            .text
             .split('|')
             .next()
-            .expect("model carries var|cwd");
+            .expect("result carries var|cwd");
 
         // The reported CLAUDE_CONFIG_DIR must have been a real, existing
         // directory *while the child ran* (proving the guard outlived it) —
@@ -282,6 +329,69 @@ mod tests {
         // so the path itself is gone.
         assert_ne!(reported_var, "<unset>");
         assert!(!std::path::Path::new(reported_var).exists());
+    }
+
+    /// The API-failure path: the CLI exits non-zero but emits a well-formed
+    /// envelope with `is_error: true`, and **stderr is empty** — so the message
+    /// must come from the envelope's `result`. Mirrors a real capture of
+    /// `claude -p hi --model does-not-exist-xyz` against CLI 2.1.211.
+    #[cfg(unix)]
+    #[test]
+    fn envelope_reporting_is_error_becomes_api_error_with_message_from_result() {
+        let (_dir, script_path) = write_fake_binary(
+            "printf '{\"total_cost_usd\":0,\"usage\":{},\"modelUsage\":{},\"is_error\":true,\"subtype\":\"success\",\"api_error_status\":404,\"result\":\"model not found\"}'\nexit 1\n",
+        );
+
+        let err = try_run_with_fake_binary(&script_path, &Config::default())
+            .expect_err("an is_error envelope must not surface as Ok");
+
+        match err {
+            Error::Api { status, message } => {
+                assert_eq!(status, Some(404));
+                assert_eq!(message, "model not found");
+            }
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+    }
+
+    /// `subtype` reports `"success"` on the error envelope, so it must never be
+    /// the thing we branch on. This pins that: the fixture above says
+    /// `subtype: "success"` *and* `is_error: true`, and `is_error` must win.
+    #[cfg(unix)]
+    #[test]
+    fn is_error_wins_over_a_subtype_claiming_success() {
+        let (_dir, script_path) = write_fake_binary(
+            "printf '{\"total_cost_usd\":0,\"usage\":{},\"is_error\":true,\"subtype\":\"success\",\"result\":\"boom\"}'\n",
+        );
+
+        assert!(
+            matches!(
+                try_run_with_fake_binary(&script_path, &Config::default()),
+                Err(Error::Api { .. })
+            ),
+            "`subtype: success` must not mask `is_error: true`"
+        );
+    }
+
+    /// The CLI-failure path: no envelope at all (bad argv, missing prompt).
+    /// stdout is empty and the message is on stderr. Mirrors a real capture of
+    /// `claude -p hi --bogus-flag-xyz`.
+    #[cfg(unix)]
+    #[test]
+    fn empty_stdout_becomes_cli_error_carrying_stderr() {
+        let (_dir, script_path) =
+            write_fake_binary("echo \"error: unknown option '--bogus'\" >&2\nexit 1\n");
+
+        let err = try_run_with_fake_binary(&script_path, &Config::default())
+            .expect_err("an empty stdout must not surface as Ok");
+
+        match err {
+            Error::Cli { status, stderr } => {
+                assert_eq!(status, Some(1));
+                assert_eq!(stderr, "error: unknown option '--bogus'");
+            }
+            other => panic!("expected Error::Cli, got {other:?}"),
+        }
     }
 
     /// Live smoke test — actually runs `execute()` against a trivial prompt on
@@ -295,7 +405,18 @@ mod tests {
             .await
             .expect("live execute should succeed");
 
-        assert!(!outcome.model.is_empty());
+        // The regression guard for the 2026-07-16 silent-data-loss drift: when the
+        // CLI moved response text from `content` blocks to `result`, the parser kept
+        // returning a clean, empty Outcome. Assert the text is actually there.
+        assert!(
+            !outcome.text.is_empty(),
+            "live call returned empty text — the response-text field has drifted again"
+        );
+        assert!(
+            outcome.primary_model().is_some(),
+            "live success envelope must report at least one modelUsage entry"
+        );
         assert!(outcome.cost_usd >= 0.0);
+        assert!(!outcome.is_error);
     }
 }

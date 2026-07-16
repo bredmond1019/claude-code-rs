@@ -124,8 +124,10 @@ async fn live_isolated_execute_does_not_disturb_interactive_session() {
     let isolated_outcome = isolated_result.expect("isolated execute should succeed");
     let interactive_outcome = interactive_result.expect("interactive execute should succeed");
 
-    assert!(!isolated_outcome.model.is_empty());
+    assert!(!isolated_outcome.text.is_empty());
+    assert!(isolated_outcome.primary_model().is_some());
     assert!(isolated_outcome.cost_usd >= 0.0);
-    assert!(!interactive_outcome.model.is_empty());
+    assert!(!interactive_outcome.text.is_empty());
+    assert!(interactive_outcome.primary_model().is_some());
     assert!(interactive_outcome.cost_usd >= 0.0);
 }

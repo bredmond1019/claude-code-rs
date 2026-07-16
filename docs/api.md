@@ -78,21 +78,38 @@ single-use OAuth refresh token and silently revoke an interactive session's cred
 
 ## Outcome
 
-`Outcome` (`src/parse.rs`, schema-locked to today's `claude` CLI JSON — `total_cost_usd`, top-level
-`usage`, `model`, not the stale `cost_usd`/`message.usage` shape from earlier CLI versions):
+`Outcome` (`src/parse.rs`) mirrors the CLI's `--output-format json` envelope. **The authority for
+this shape is `tests/fixtures/` — real captured responses — not this page.** If the two disagree,
+the fixtures are right and this page is stale. See `tests/fixtures/README.md` and decision
+[D2](../planning/decisions/D2-cli-schema-provenance.md).
 
 - `cost_usd: f64` — from `total_cost_usd`.
 - `usage: Usage` — `input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
-  `cache_read_input_tokens` (each defaulted to `0` if absent).
-- `model: String`.
-- `content: Vec<ContentBlock>` — defaults to empty; `ContentBlock::Text { text }` or
-  `ContentBlock::Unknown { block_type, data }` for forward-compat with unrecognized block types.
+  `cache_read_input_tokens` (each defaulted to `0` if absent). The CLI's `usage` object carries
+  further fields that this crate ignores.
+- `model_usage: BTreeMap<String, ModelUsage>` — from `modelUsage`. **The only place the model name
+  appears**; there is no top-level `model` field. Empty on the error envelope.
+- `text: String` — from `result`. The reply on success, the error message on failure. Required: a
+  default would render its removal as an empty reply, which is silent data loss.
+- `is_error: bool` — the only trustworthy failure signal. The envelope reports
+  `subtype: "success"` even when the call failed, so `subtype` must never be used for this.
+- `api_error_status: Option<u16>` — `None` on success.
+
+`Outcome::primary_model() -> Option<&str>` picks the most plausible model from `model_usage`,
+ranking by cost, then output tokens, then key order. This is **this crate's heuristic**, not
+something the CLI reports — a single call can bill several models. `None` when no model ran.
 
 `parse::parse_result(json: &str) -> Result<Outcome>` parses a raw `claude` CLI JSON response;
-returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`, `usage`, `model`).
+returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`, `usage`, `result`,
+`is_error`). Unknown fields are ignored, so a vendor addition never breaks the parse.
 
 ## Consumer Contract
 
-Placeholder — `engine-rs` `ClaudeCodeStep::process` (EN.2.A) calls `execute`, maps the result into
-`TaskContext.output`, and stamps `NodeRun.usage` + cost from `total_cost_usd`. Recorded in engine-rs
-decision D4.
+`engine-rs`'s `ClaudeCodeStep::process` (EN.2.A) calls `execute`, writes
+`{content, cost_usd, model}` into its own `TaskContext::nodes` entry, and stamps `NodeRun.usage`.
+Recorded in engine-rs decision D4.
+
+Note this boundary needs no version pin or contract doc: `engine-rs` consumes this crate through a
+Cargo **path dependency** and constructs `Outcome` as a struct literal, so `rustc` enforces the
+seam on every build — more strictly than prose could. The boundary that *does* need evidence is the
+one above it, between this crate and the vendor's CLI, which is what the fixtures cover.
