@@ -7,7 +7,7 @@ layer: [engine, infra]
 project: claude-code-rs
 status: active
 keywords: [architecture, subprocess, tokio, credential-isolation, module-map]
-related: [api, claude-code-rs]
+related: [api]
 ---
 
 # claude-code-rs — Architecture

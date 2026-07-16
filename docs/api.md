@@ -7,7 +7,7 @@ layer: [engine, infra]
 project: claude-code-rs
 status: active
 keywords: [api, library, execute, config, outcome, consumer-contract]
-related: [architecture, claude-code-rs]
+related: [architecture]
 ---
 
 # claude-code-rs — Public API
