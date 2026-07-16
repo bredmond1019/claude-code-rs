@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-07-03T20:42:32Z"
+timestamp: "2026-07-16T02:52:09Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,33 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-07-15 — 1-b-credential-isolation closed out, PR #2 open
+
+**What:** Closed out `1-b-credential-isolation` (`CC.1.B`, Credential isolation). Ran
+`/sdlc-flow 1-b-credential-isolation`: 5 tasks implemented (the `isolation` module, the opt-in
+`Config.isolated` field, `execute()` wiring, and `tests/isolation.rs`), one consolidated review
+returned PASS, docs were patched, and PR #2 was opened
+(https://github.com/bredmond1019/claude-code-rs/pull/2, not yet merged). Followed with
+`/close-out`: `cargo fmt --check` / `cargo clippy -- -D warnings` / `cargo test` / `cargo build
+--release` all pass, the emoji gate passes, a coverage-gap scan found no blocking gaps, and
+`/code-review low` returned zero findings. `docs/architecture.md` and `docs/api.md` were already
+current from the workflow's own docs stage, so no further doc patching was needed.
+`planning/state.json` was hand-edited to flip `CC.1.B` from `open` to `closed` in `tracks[]`, and
+the resolved `milestone-1-is-en2a-dependency` carryover entry was removed (its `clears_when` —
+`CC.1.A` and `CC.1.B` both closed — is now satisfied). `mev emit-state --write` was run once from
+the main checkout (not this worktree) and regenerated `focus` and `status.md` across the brain,
+surfacing `CC.2.A` and `CC.2.B` as unblocked "next" work. `planning/handoff.md` was written for
+the next agent, whose first action is `/generate-tasks` for `CC.2.A` — Streaming output.
+
+**Why:** Close out `CC.1.B` cleanly end to end — validation, coverage, and review all clean, docs
+already current — and leave a crisp resumption point for the next session rather than an implicit
+"pick it up from status.md" handoff.
+
+**Refs:** PR #2 (https://github.com/bredmond1019/claude-code-rs/pull/2); spec
+`1-b-credential-isolation`.
 
 ---
 
