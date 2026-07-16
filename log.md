@@ -16,6 +16,53 @@ related: [status, context]
 
 ---
 
+## 2026-07-15 — CC.1.B credential isolation implemented, PASS
+
+**What:** Ran `/sdlc-flow` for spec `1-b-credential-isolation` (Phase 1, Block B — `CC.1.B`,
+"Credential isolation") in a shared worktree: 5 tasks. Task 1 added the `isolation` module —
+`IsolatedConfigDir`, an RAII guard (backed by `tempfile::TempDir`) that builds a temp
+`CLAUDE_CONFIG_DIR` containing a `refreshToken`-redacted `.credentials.json` (mode `0600`) and an
+optional `.claude.json` copy, sourced from the macOS Keychain then `~/.claude/.credentials.json`
+fallback in production, or an injectable `with_sources()` constructor in tests; `Drop` removes the
+temp dir on every exit path, including mid-construction failure. Task 2 added an opt-in
+`Config.isolated: bool` field alongside the existing `cwd`/`env` override fields. Task 3 wired
+`execute()` to apply `cwd`/`env` via `Command::current_dir`/`envs` and, when `isolated` is true,
+build the isolation guard, set `CLAUDE_CONFIG_DIR` in the child env, and keep the guard alive until
+after the child's output is read — the default non-isolated path is unchanged. Task 4 added
+`tests/isolation.rs` integration tests (temp-dir layout, redaction, `0600` permissions, Drop
+cleanup, an `#[ignore]`d live concurrent-execute smoke test proving isolation doesn't disturb an
+interactive session). Task 5 was a pure validation gate — all four checks (`cargo fmt --check`,
+`cargo clippy -- -D warnings`, `cargo test`, `cargo build --release`) passed with no code changes.
+One consolidated review returned PASS with no findings on the first attempt; docs patched
+(`docs/architecture.md`, `docs/api.md`). Notable decisions: `tempfile::TempDir` over hand-rolled
+cleanup logic; two named constructors (`new()`/`with_sources()`) instead of a trait/closure for
+credential-source injection; a dedicated `Error::Isolation(std::io::Error)` variant (no `#[from]`,
+since `thiserror` can't derive two `From<std::io::Error>` impls on one enum); `copy_if_present`
+only suppresses `NotFound`, mirroring the Python reference's `suppress(FileNotFoundError)`; a
+static `Mutex` serializes `CLAUDE_BINARY` env-var mutations across parallel tests in
+`execute.rs`. Next: define Phase 1, Block C or Phase 2, Block A (`CC.2.A` — Streaming output) via
+`/generate-tasks`.
+
+**Why:** Close out `CC.1.B` cleanly end to end — implementation, review, docs — leaving credential
+isolation available as an opt-in `Config.isolated` switch for concurrent subprocess + interactive
+sessions.
+
+**Refs:** spec `1-b-credential-isolation`; run-state
+`planning/1-b-credential-isolation/sdlc/sdlc-flow-state.json`.
+
+```
+bb3af99 docs: update docs for 1-b-credential-isolation
+7d31412 feat: implement 1-b-credential-isolation-task4
+51fbb0f feat: implement 1-b-credential-isolation-task3
+eb271e6 feat: implement 1-b-credential-isolation-task2
+fe235eb feat: implement 1-b-credential-isolation-task1
+4bc46b2 chore: init worktree 1-b-credential-isolation-flow
+c2266e1 Updated slash commands and doc
+62150c0 chore: pull harness commands from base-template (state-schema.md path fix)
+```
+
+---
+
 ## 2026-07-03 — PR #1 merged, CC.1.A closed out
 
 **What:** Ran `/sdlc-flow` for spec `1-a-execute-core` (Phase 1, Block A — `CC.1.A`, "execute
