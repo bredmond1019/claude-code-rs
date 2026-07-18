@@ -46,6 +46,17 @@ pub struct Config {
     /// (inherited env, no isolation) to keep the default execution path
     /// unchanged.
     pub isolated: bool,
+
+    /// When `true`, appends `--dangerously-skip-permissions` so the spawned
+    /// session never blocks on an interactive tool-use approval prompt —
+    /// required for any headless (`-p`) run that needs to actually use a
+    /// file-editing/bash tool, since there is no TTY to approve one on.
+    /// Defaults to `false` (today's text-only-response behavior unchanged).
+    /// Callers that opt in are responsible for scoping the blast radius
+    /// themselves, e.g. via `cwd` plus `disallowed_tools` — this flag alone
+    /// grants no tool a wider reach than the CLI's own tool definitions
+    /// allow.
+    pub dangerously_skip_permissions: bool,
 }
 
 impl Config {
@@ -53,7 +64,8 @@ impl Config {
     ///
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
-    /// `--resume <id>`, then always `--output-format json`.
+    /// `--resume <id>`, `--dangerously-skip-permissions`, then always
+    /// `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -95,6 +107,10 @@ impl Config {
             args.push(resume.clone());
         }
 
+        if self.dangerously_skip_permissions {
+            args.push("--dangerously-skip-permissions".to_string());
+        }
+
         args.push("--output-format".to_string());
         args.push("json".to_string());
 
@@ -129,6 +145,7 @@ mod tests {
             disallowed_tools: vec!["web".to_string()],
             continue_session: true,
             resume: Some("session-123".to_string()),
+            dangerously_skip_permissions: true,
             ..Config::default()
         };
 
@@ -152,6 +169,7 @@ mod tests {
                 "--continue",
                 "--resume",
                 "session-123",
+                "--dangerously-skip-permissions",
                 "--output-format",
                 "json",
             ]
@@ -159,5 +177,14 @@ mod tests {
             .map(String::from)
             .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn dangerously_skip_permissions_defaults_to_false_and_omits_flag() {
+        let config = Config::default();
+        assert!(!config.dangerously_skip_permissions);
+        assert!(!config
+            .build_args("hi")
+            .contains(&"--dangerously-skip-permissions".to_string()));
     }
 }
