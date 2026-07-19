@@ -16,6 +16,16 @@ related: [status, context]
 
 ---
 
+## 2026-07-18 — Researched structured outputs in Python SDK
+
+**What:** Investigated `claude-agent-sdk-python` to determine how structured outputs are implemented for Claude Code. Discovered that the Python SDK delegates the heavy lifting to the CLI by passing `--json-schema` (when `output_format` is provided) and extracting the `structured_output` field from the final `result` envelope. Created a detailed pre-plan note at `planning/structured-outputs-python-sdk/notes.md` outlining the required changes to `Config` (`src/config.rs`) and `Outcome` (`src/parse.rs`). Verified that the Python SDK exclusively uses `--output-format stream-json` for this, reinforcing that our `CC.2.A` (Streaming output) block should likely precede structured output implementation.
+
+**Why:** To prepare `claude-code-rs` for handling JSON schemas, a hard requirement for `engine-rs` downstream, while avoiding reinventing validation logic that the CLI already provides.
+
+**Refs:** `planning/structured-outputs-python-sdk/notes.md`
+
+---
+
 ## 2026-07-16 — CLI schema drift fixed against real captured fixtures (D2); `ContentBlock` deleted
 
 **What:** Unplanned cross-repo fix, triggered by `engine-rs` EN.2.A's failing live test
