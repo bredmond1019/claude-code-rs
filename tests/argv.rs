@@ -66,6 +66,49 @@ fn full_config_builds_exact_argv_in_order() {
 }
 
 #[test]
+fn json_schema_flag_is_placed_immediately_before_output_format() {
+    let config = Config {
+        json_schema: Some(
+            serde_json::json!({"type": "object", "properties": {"ok": {"type": "boolean"}}}),
+        ),
+        ..Config::default()
+    };
+
+    let args = config.build_args("give me structured output");
+
+    assert_eq!(
+        args,
+        vec![
+            "-p",
+            "give me structured output",
+            "--json-schema",
+            "{\"properties\":{\"ok\":{\"type\":\"boolean\"}},\"type\":\"object\"}",
+            "--output-format",
+            "json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn json_schema_absent_by_default_omits_flag_from_exact_argv() {
+    let config = Config::default();
+
+    let args = config.build_args("hello world");
+
+    assert_eq!(
+        args,
+        vec!["-p", "hello world", "--output-format", "json"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>()
+    );
+    assert!(!args.contains(&"--json-schema".to_string()));
+}
+
+#[test]
 fn resume_without_continue_is_included_without_continue_flag() {
     let config = Config {
         resume: Some("session-xyz".to_string()),
