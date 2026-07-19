@@ -16,6 +16,56 @@ related: [status, context]
 
 ---
 
+## 2026-07-18 — Structured output support landed (CC.2.C)
+
+**What:** Implemented `CC.2.C` (Structured output) end to end across 6 tasks, all passing on first
+attempt, PASS on review. `Config` gained `json_schema: Option<serde_json::Value>`; `build_args` emits
+`--json-schema <compact-json>` immediately before the trailing `--output-format json` pair when set,
+and omits it entirely otherwise (task 1). `Outcome` gained `structured_output: Option<serde_json::Value>`
+(`#[serde(default)]`), populated from the CLI's `structured_output` key, with the module leniency doc
+updated to explain the defaulted rationale (task 2). Per D2 provenance rules, captured a real
+`cli-structured-2.1.214.json` fixture from a live `claude` CLI call with `--json-schema` (redacting only
+`session_id`/`uuid`) and documented it in `tests/fixtures/README.md` (task 3). `tests/parse_schema.rs`
+now conformance-tests `structured_output` against both the structured and schemaless fixtures and adds
+an `#[ignore]`d live canary (task 4). `tests/argv.rs` locks the exact `--json-schema` flag position
+(task 5). Task 6 found no remaining scope — all acceptance criteria were already satisfied by tasks 1-5,
+and the full validation suite (fmt, clippy, test, release build) passed cleanly. `tasks.json` was never
+committed for this spec despite `tasks.md` referencing it as authoritative; scope for tasks 5-6 was
+reconstructed from the spec's Acceptance Criteria instead. `planning/state.json`'s block graph has no
+`CC.2.C` entry (only `CC.2.A`/`CC.2.B` exist under wave 2), so no authored block status could be flipped
+for this run — flagged for a follow-up state.json fix, not fabricated here.
+
+**Why:** `CC.2.C` is a hard requirement for the downstream `engine-rs` consumer, letting callers enforce
+a JSON Schema on Claude's reply and read back the parsed result without hand-rolled validation.
+
+**Refs:** `planning/2-c-structured-output/tasks.md`, `planning/decisions/D2-cli-schema-provenance.md`,
+`tests/fixtures/cli-structured-2.1.214.json`
+
+Next: define `CC.2.A` (Streaming output) or `CC.2.B` (Multi-turn conversation helper) via `/generate-tasks`.
+
+```
+b20f457 docs: update docs for 2-c-structured-output
+5a5c4a9 feat: implement 2-c-structured-output-task5
+2ba468c feat: implement 2-c-structured-output-task4
+4fe18a2 feat: implement 2-c-structured-output-task3
+d68bb10 feat: implement 2-c-structured-output-task2
+acebb29 feat: implement 2-c-structured-output-task1
+2c97a3c docs: sync GEMINI.md with CLAUDE.md
+bb197f6 docs: capture structured outputs research and handoff
+```
+
+---
+
+## 2026-07-18 — Researched structured outputs in Python SDK
+
+**What:** Investigated `claude-agent-sdk-python` to determine how structured outputs are implemented for Claude Code. Discovered that the Python SDK delegates the heavy lifting to the CLI by passing `--json-schema` (when `output_format` is provided) and extracting the `structured_output` field from the final `result` envelope. Created a detailed pre-plan note at `planning/structured-outputs-python-sdk/notes.md` outlining the required changes to `Config` (`src/config.rs`) and `Outcome` (`src/parse.rs`). Verified that the Python SDK exclusively uses `--output-format stream-json` for this, reinforcing that our `CC.2.A` (Streaming output) block should likely precede structured output implementation.
+
+**Why:** To prepare `claude-code-rs` for handling JSON schemas, a hard requirement for `engine-rs` downstream, while avoiding reinventing validation logic that the CLI already provides.
+
+**Refs:** `planning/structured-outputs-python-sdk/notes.md`
+
+---
+
 ## 2026-07-16 — CLI schema drift fixed against real captured fixtures (D2); `ContentBlock` deleted
 
 **What:** Unplanned cross-repo fix, triggered by `engine-rs` EN.2.A's failing live test

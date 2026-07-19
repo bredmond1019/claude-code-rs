@@ -13,6 +13,9 @@
 //!   from the model genuinely replying with nothing. That is silent data loss, so it must fail loudly.
 //! - [`Outcome::api_error_status`] is defaulted. Its absence costs an HTTP status code on an error
 //!   that is still fully described by `is_error` and `text` — less detail, not lost data.
+//! - [`Outcome::structured_output`] is defaulted. Its absence means "no schema was requested" — a
+//!   schemaless call never has this key at all, so a missing value is a legitimate, expected state,
+//!   not lost data.
 //!
 //! This rule exists because the opposite instinct caused a real bug: a `#[serde(default)]` on a
 //! response-text field let the vendor remove it while every test kept passing.
@@ -121,6 +124,15 @@ pub struct Outcome {
     /// [`is_error`]: Outcome::is_error
     #[serde(default)]
     pub api_error_status: Option<u16>,
+
+    /// The parsed structured output, when a `Config.json_schema` was supplied (CLI:
+    /// `structured_output`).
+    ///
+    /// Present only when the call was made with `--json-schema`; absent (not `null`) otherwise. On
+    /// the success envelope with a schema, [`Outcome::text`] still carries the same JSON as a string
+    /// (via `result`) — this field is the pre-parsed object form.
+    #[serde(default)]
+    pub structured_output: Option<serde_json::Value>,
 }
 
 impl Outcome {
@@ -194,6 +206,7 @@ mod tests {
             text: "hi".to_string(),
             is_error: false,
             api_error_status: None,
+            structured_output: None,
         }
     }
 

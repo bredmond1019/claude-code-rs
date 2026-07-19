@@ -18,6 +18,9 @@ const FIXTURE_SUCCESS: &str = include_str!("fixtures/cli-result-2.1.211.json");
 /// Real capture, `claude` 2.1.211, API error envelope (unroutable model, HTTP 404).
 const FIXTURE_ERROR: &str = include_str!("fixtures/cli-error-2.1.211.json");
 
+/// Real capture, `claude` 2.1.214, success envelope with `--json-schema` (structured output).
+const FIXTURE_STRUCTURED: &str = include_str!("fixtures/cli-structured-2.1.214.json");
+
 /// Top-level keys of an envelope.
 fn top_level_keys(json: &str) -> BTreeSet<String> {
     let value: serde_json::Value = serde_json::from_str(json).expect("valid JSON");
@@ -108,6 +111,41 @@ fn captured_error_envelope_still_claims_subtype_success() {
     assert_eq!(raw["is_error"], true);
 }
 
+/// A `--json-schema` request populates `structured_output`, and `result` still carries the same
+/// object as a JSON string — the parser must agree with itself on both representations.
+#[test]
+fn parses_captured_structured_output_envelope() {
+    let outcome = parse_result(FIXTURE_STRUCTURED).expect("real structured capture must parse");
+
+    let expected = serde_json::json!({
+        "city": "Paris",
+        "population": 2100000
+    });
+
+    assert_eq!(
+        outcome.structured_output,
+        Some(expected.clone()),
+        "structured_output must deserialize the CLI's `structured_output` object"
+    );
+    assert_eq!(
+        outcome.text,
+        expected.to_string(),
+        "`result` carries the same object as its JSON string form"
+    );
+}
+
+/// A schemaless call never sends `--json-schema`, so the CLI never emits the `structured_output`
+/// key at all. Pin that this defaults cleanly to `None` rather than failing to parse.
+#[test]
+fn parses_captured_success_envelope_without_structured_output() {
+    let outcome = parse_result(FIXTURE_SUCCESS).expect("real success capture must parse");
+
+    assert_eq!(
+        outcome.structured_output, None,
+        "a schemaless capture must default structured_output to None"
+    );
+}
+
 /// Documents the success/error envelope difference, so the canary below can compare like with like.
 #[test]
 fn error_envelope_is_a_subset_of_the_success_envelope() {
@@ -173,4 +211,43 @@ async fn live_response_key_set_matches_captured_fixture() {
     );
 
     parse_result(&live).expect("a live response must parse with the current parser");
+}
+
+/// **Structured-output canary.** Runs the live CLI with `--json-schema` and confirms
+/// `structured_output` is actually populated, not just parseable.
+///
+/// This is a narrower check than [`live_response_key_set_matches_captured_fixture`] — it does not
+/// diff the full key set, because `--json-schema` is opt-in and would otherwise force every
+/// caller to keep two full-envelope fixtures in lockstep. It exists to catch the CLI silently
+/// dropping or renaming `structured_output` without anyone noticing.
+///
+/// Run with `cargo test -- --ignored` after any CLI upgrade.
+#[tokio::test]
+#[ignore]
+async fn live_structured_output_is_populated() {
+    let raw = tokio::process::Command::new("claude")
+        .args([
+            "-p",
+            "Return the capital of France and its approximate population.",
+            "--output-format",
+            "json",
+            "--json-schema",
+            r#"{"type":"object","properties":{"city":{"type":"string"},"population":{"type":"integer"}},"required":["city","population"]}"#,
+        ])
+        .output()
+        .await
+        .expect("live CLI call");
+
+    let live = String::from_utf8_lossy(&raw.stdout);
+    assert!(
+        !live.trim().is_empty(),
+        "live CLI produced no stdout: {}",
+        String::from_utf8_lossy(&raw.stderr)
+    );
+
+    let outcome = parse_result(&live).expect("a live structured response must parse");
+    assert!(
+        outcome.structured_output.is_some(),
+        "a --json-schema call must populate structured_output"
+    );
 }

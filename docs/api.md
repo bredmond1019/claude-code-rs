@@ -54,6 +54,7 @@ println!("{} cost ${}", outcome.model, outcome.cost_usd);
 | `cwd: Option<PathBuf>` | applied via `Command::current_dir` (not a CLI flag) |
 | `env: Vec<(String, String)>` | applied via `Command::envs`, on top of the inherited environment (not a CLI flag) |
 | `isolated: bool` | when `true`, `execute()` runs the subprocess under a temp `CLAUDE_CONFIG_DIR` built by `IsolatedConfigDir` (see below); not a CLI flag; default `false` |
+| `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
 
 `Config::build_args(&self, prompt: &str) -> Vec<String>` builds the exact argv: `-p <prompt>`, then
 the flags above in field order, always ending with `--output-format json`. `cwd`, `env`, and
@@ -94,6 +95,10 @@ the fixtures are right and this page is stale. See `tests/fixtures/README.md` an
 - `is_error: bool` — the only trustworthy failure signal. The envelope reports
   `subtype: "success"` even when the call failed, so `subtype` must never be used for this.
 - `api_error_status: Option<u16>` — `None` on success.
+- `structured_output: Option<serde_json::Value>` — from `structured_output`, present only when the
+  call was made with `Config.json_schema` set (CLI: `--json-schema`); absent (not `null`) on a
+  schemaless call. `text` still carries the same JSON as a string via `result` either way — this
+  field is the pre-parsed object form.
 
 `Outcome::primary_model() -> Option<&str>` picks the most plausible model from `model_usage`,
 ranking by cost, then output tokens, then key order. This is **this crate's heuristic**, not

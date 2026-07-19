@@ -57,6 +57,13 @@ pub struct Config {
     /// grants no tool a wider reach than the CLI's own tool definitions
     /// allow.
     pub dangerously_skip_permissions: bool,
+
+    /// Optional JSON Schema to enforce on Claude's reply (`--json-schema
+    /// <json>`). When `Some`, `build_args` serializes it to compact JSON and
+    /// emits the flag immediately before the trailing `--output-format json`
+    /// pair; when `None`, the flag is omitted entirely (today's schemaless
+    /// behavior unchanged).
+    pub json_schema: Option<serde_json::Value>,
 }
 
 impl Config {
@@ -64,8 +71,8 @@ impl Config {
     ///
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
-    /// `--resume <id>`, `--dangerously-skip-permissions`, then always
-    /// `--output-format json`.
+    /// `--resume <id>`, `--dangerously-skip-permissions`, `--json-schema <json>`,
+    /// then always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -111,6 +118,11 @@ impl Config {
             args.push("--dangerously-skip-permissions".to_string());
         }
 
+        if let Some(json_schema) = &self.json_schema {
+            args.push("--json-schema".to_string());
+            args.push(json_schema.to_string());
+        }
+
         args.push("--output-format".to_string());
         args.push("json".to_string());
 
@@ -146,6 +158,7 @@ mod tests {
             continue_session: true,
             resume: Some("session-123".to_string()),
             dangerously_skip_permissions: true,
+            json_schema: Some(serde_json::json!({"type": "object"})),
             ..Config::default()
         };
 
@@ -170,6 +183,8 @@ mod tests {
                 "--resume",
                 "session-123",
                 "--dangerously-skip-permissions",
+                "--json-schema",
+                "{\"type\":\"object\"}",
                 "--output-format",
                 "json",
             ]
@@ -186,5 +201,14 @@ mod tests {
         assert!(!config
             .build_args("hi")
             .contains(&"--dangerously-skip-permissions".to_string()));
+    }
+
+    #[test]
+    fn json_schema_defaults_to_none_and_omits_flag() {
+        let config = Config::default();
+        assert!(config.json_schema.is_none());
+        assert!(!config
+            .build_args("hi")
+            .contains(&"--json-schema".to_string()));
     }
 }
