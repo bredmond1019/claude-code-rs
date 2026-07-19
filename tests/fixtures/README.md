@@ -16,11 +16,14 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 |---|---|---|
 | `cli-result-2.1.211.json` | `claude` 2.1.211, 2026-07-16 | success (`is_error: false`) |
 | `cli-error-2.1.211.json` | `claude` 2.1.211, 2026-07-16 | API error (`is_error: true`, HTTP 404) |
+| `cli-structured-2.1.214.json` | `claude` 2.1.214, 2026-07-18 | success with `--json-schema` (envelope: structured output) |
 
 The filename carries the CLI version. **That is the version record** — this crate deliberately has
 no contract doc, changelog, or semver for the CLI schema: the other party is a vendor who never
 agreed to any of it. The filename is the version, the tests are the enforcement, this file is the
-provenance.
+provenance. Fixture filenames record the version they were captured against independently — a later
+capture (e.g. `cli-structured-2.1.214.json` against an earlier `cli-result-2.1.211.json`) is expected
+and does not imply the older fixtures are stale.
 
 A fixture that was *not* captured must be named `*-HANDWRITTEN.json`. Never let an authored fixture
 wear a version number — that is precisely the lie described above.
@@ -33,6 +36,12 @@ claude -p "Reply with exactly: hello" --output-format json > cli-result-<version
 
 # error envelope (an unroutable model is the cheapest reliable trigger)
 claude -p "hi" --model does-not-exist-xyz --output-format json > cli-error-<version>.json
+
+# structured output envelope (--json-schema adds the structured_output key)
+claude -p "Return the capital of France and its approximate population." \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"city":{"type":"string"},"population":{"type":"integer"}},"required":["city","population"]}' \
+  > cli-structured-<version>.json
 ```
 
 Then redact **only** the identifying fields, replacing each with the all-zero sentinel
@@ -76,6 +85,7 @@ this table, the next person "helpfully" parses `subtype` and reintroduces the bu
 | `result` | **depend** | → `Outcome::text`. Present on **both** envelopes — carries the reply on success and the error message on failure. |
 | `is_error` | **depend** | **The only trustworthy error signal.** |
 | `api_error_status` | **depend** | `null` on success, HTTP status on error. |
+| `structured_output` | **depend** | → `Outcome::structured_output`. Present only when the request was made with `--json-schema`; absent (defaulted to `None`) on schemaless calls. See `cli-structured-2.1.214.json`. |
 | `subtype` | **IGNORE — it lies** | Reports `"success"` even when `is_error: true`. Do not use it to detect errors. |
 | `type` | ignore | Always `"result"` for `--output-format json`. |
 | `stop_reason`, `terminal_reason` | ignore | `terminal_reason` does track errors (`"api_error"`), but `is_error` is simpler and sufficient. |
