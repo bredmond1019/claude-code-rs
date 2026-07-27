@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-07-16T02:52:09Z"
+timestamp: "2026-07-19T01:01:54Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -31,14 +31,23 @@ an `#[ignore]`d live canary (task 4). `tests/argv.rs` locks the exact `--json-sc
 (task 5). Task 6 found no remaining scope — all acceptance criteria were already satisfied by tasks 1-5,
 and the full validation suite (fmt, clippy, test, release build) passed cleanly. `tasks.json` was never
 committed for this spec despite `tasks.md` referencing it as authoritative; scope for tasks 5-6 was
-reconstructed from the spec's Acceptance Criteria instead. `planning/state.json`'s block graph has no
-`CC.2.C` entry (only `CC.2.A`/`CC.2.B` exist under wave 2), so no authored block status could be flipped
-for this run — flagged for a follow-up state.json fix, not fabricated here.
+reconstructed from the spec's Acceptance Criteria instead.
+
+Resolved the research open question empirically against **live CLI 2.1.214**: `--json-schema` works with
+the plain `--output-format json` envelope — `structured_output` returns as a top-level key holding the
+parsed object while `result` carries the same JSON as a string; with no schema the key is absent. So
+structured output is **INDEPENDENT of `CC.2.A` streaming**, correcting the Python-SDK research note's
+assumption that `stream-json` was required. Delivered as a new master-plan block `CC.2.C` via `/sdlc-flow`
+(6/6 tasks passed, consolidated review PASS with 0 findings on the first attempt, `docs/api.md` patched);
+**PR #3 opened and merged into `main`** (merge commit `9a07d7d`). This `/log-work` pass also added the
+missing `CC.2.C` block to `planning/state.json`'s graph (wave 2, `depends_on` `CC.1.B`) and set it
+`closed` — closing the gap the wrap-up entry had flagged for follow-up.
 
 **Why:** `CC.2.C` is a hard requirement for the downstream `engine-rs` consumer, letting callers enforce
 a JSON Schema on Claude's reply and read back the parsed result without hand-rolled validation.
 
-**Refs:** `planning/2-c-structured-output/tasks.md`, `planning/decisions/D2-cli-schema-provenance.md`,
+**Refs:** PR #3 (https://github.com/bredmond1019/claude-code-rs/pull/3), merge commit `9a07d7d`;
+spec `2-c-structured-output`; block `CC.2.C`; `planning/decisions/D2-cli-schema-provenance.md`;
 `tests/fixtures/cli-structured-2.1.214.json`
 
 Next: define `CC.2.A` (Streaming output) or `CC.2.B` (Multi-turn conversation helper) via `/generate-tasks`.
