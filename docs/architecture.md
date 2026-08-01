@@ -25,7 +25,7 @@ src/
 ├── lib.rs        ← crate root; re-exports Config/Error/Result/execute/Outcome; declares module skeleton
 ├── error.rs      ← thiserror crate-level Error enum + Result<T> alias (implemented, CC.0.A)
 ├── config.rs     ← Config struct + build_args() CLI arg-builder (implemented, CC.1.A)
-├── execute.rs    ← async execute(): binary resolution, spawn, whole-call timeout, kill_on_drop (implemented, CC.1.A)
+├── execute.rs    ← async execute(): binary resolution, spawn, whole-call timeout (config.timeout, else 300s), kill_on_drop (implemented, CC.1.A)
 ├── parse.rs      ← Outcome/Usage/ModelUsage + parse_result(); shape defined by tests/fixtures/ (implemented, CC.1.A)
 └── isolation.rs  ← IsolatedConfigDir RAII guard: temp CLAUDE_CONFIG_DIR with redacted credentials (implemented, CC.1.B)
 ```
@@ -74,7 +74,8 @@ env var, else `PATH` via `which`), applies `config.cwd` (`Command::current_dir`)
 `IsolatedConfigDir` guard first (surfacing `Error::Isolation` before ever spawning the child) and sets
 `CLAUDE_CONFIG_DIR` in the child env, keeping the guard alive until after the child's output is
 read — spawns it with `config.build_args(prompt)`, wraps the whole call in one
-`tokio::time::timeout` (`kill_on_drop(true)` so a timed-out/cancelled call never leaks a subprocess)
+`tokio::time::timeout` — `config.timeout` when set, else the built-in 300s default
+(`kill_on_drop(true)` so a timed-out/cancelled call never leaks a subprocess)
 → CLI emits `--output-format json` → `parse::parse_result` extracts `total_cost_usd`, top-level
 `usage`, `modelUsage`, and `result` → `Outcome` returned to the caller. The default (non-isolated,
 no overrides) path is unchanged.

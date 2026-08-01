@@ -34,8 +34,9 @@ println!("{} cost ${}", outcome.model, outcome.cost_usd);
   `config.isolated` is `true` — builds an `IsolatedConfigDir` guard and sets `CLAUDE_CONFIG_DIR` in
   the child env (guard is kept alive until the child's output is read, then dropped, cleaning up the
   temp dir). Spawns the process with `config.build_args(prompt)` (env otherwise inherited from the
-  current process), captures stdout, and wraps the whole call in one `tokio::time::timeout` (default
-  300s; not per-line), killing the child on drop/timeout. Errors: `Error::BinaryNotFound`,
+  current process), captures stdout, and wraps the whole call in one `tokio::time::timeout` (not
+  per-line) whose duration is `config.timeout` when set, else the built-in `DEFAULT_TIMEOUT` of
+  300s, killing the child on drop/timeout. Errors: `Error::BinaryNotFound`,
   `Error::Spawn`, `Error::Timeout`, `Error::Parse`, `Error::Isolation`.
 
 ## Config
@@ -55,10 +56,13 @@ println!("{} cost ${}", outcome.model, outcome.cost_usd);
 | `env: Vec<(String, String)>` | applied via `Command::envs`, on top of the inherited environment (not a CLI flag) |
 | `isolated: bool` | when `true`, `execute()` runs the subprocess under a temp `CLAUDE_CONFIG_DIR` built by `IsolatedConfigDir` (see below); not a CLI flag; default `false` |
 | `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
+| `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
 
 `Config::build_args(&self, prompt: &str) -> Vec<String>` builds the exact argv: `-p <prompt>`, then
-the flags above in field order, always ending with `--output-format json`. `cwd`, `env`, and
-`isolated` are not CLI flags — they are applied to the `Command` directly by `execute()`.
+the flags above in field order, always ending with `--output-format json`. `cwd`, `env`,
+`isolated`, and `timeout` are not CLI flags — the first three are applied to the `Command` directly
+by `execute()`, and `timeout` only sets the duration of `execute()`'s Rust-side timeout, so
+`build_args`'s output is byte-identical whatever it is set to.
 
 ## IsolatedConfigDir
 
