@@ -406,6 +406,55 @@ mod tests {
         }
     }
 
+    /// The default-preservation contract: a `Config` that never touches
+    /// `timeout` must resolve to exactly today's `DEFAULT_TIMEOUT`, and an
+    /// explicit `Some` must be passed through unchanged. Pure — no subprocess,
+    /// so it pins the 300s default without waiting 300s to observe it.
+    #[test]
+    fn effective_timeout_defaults_to_the_constant_and_honors_an_override() {
+        assert_eq!(effective_timeout(&Config::default()), DEFAULT_TIMEOUT);
+        assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(300));
+
+        let overridden = Config {
+            timeout: Some(Duration::from_millis(50)),
+            ..Config::default()
+        };
+        assert_eq!(effective_timeout(&overridden), Duration::from_millis(50));
+    }
+
+    /// The override must actually be wired into the `tokio::time::timeout`
+    /// race, not merely resolved and discarded: a fake binary that sleeps 2s
+    /// against a 200ms configured timeout must fail fast with
+    /// [`Error::Timeout`], well before the sleep could have finished.
+    ///
+    /// The short 200ms value is deliberate — `try_run_with_fake_binary` holds
+    /// `CLAUDE_BINARY_ENV_LOCK` for the whole blocking call, so this test
+    /// serializes against the rest of the module. `kill_on_drop(true)` reaps
+    /// the still-sleeping child when the timed-out future is dropped.
+    #[cfg(unix)]
+    #[test]
+    fn configured_timeout_fires_before_a_slow_binary_finishes() {
+        let (_dir, script_path) = write_fake_binary("sleep 2\nprintf '{}'\n");
+
+        let config = Config {
+            timeout: Some(Duration::from_millis(200)),
+            ..Config::default()
+        };
+
+        let started = std::time::Instant::now();
+        let result = try_run_with_fake_binary(&script_path, &config);
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(result, Err(Error::Timeout)),
+            "a 200ms configured timeout against a 2s binary must yield Error::Timeout, got {result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "the configured 200ms timeout was not the one that fired — call took {elapsed:?}"
+        );
+    }
+
     /// Live smoke test — actually runs `execute()` against a trivial prompt on
     /// the subscription. Ignored so gated `cargo test` stays green; run
     /// manually with `cargo test -- --ignored` when `claude` is available.
