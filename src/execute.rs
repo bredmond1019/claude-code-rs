@@ -17,8 +17,19 @@ use crate::error::{Error, Result};
 use crate::isolation::IsolatedConfigDir;
 use crate::parse::{self, Outcome};
 
-/// Default whole-call timeout applied to every `execute()` invocation.
+/// Default whole-call timeout applied to every `execute()` invocation that does
+/// not set [`Config::timeout`].
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Resolve the whole-call timeout for one `execute()` invocation.
+///
+/// `config.timeout` of `None` — the `Config::default()` value — yields
+/// [`DEFAULT_TIMEOUT`], preserving the behavior every existing caller already
+/// has; `Some(duration)` overrides it. Kept as a pure function so the
+/// resolution rule is unit-testable without spawning a subprocess.
+fn effective_timeout(config: &Config) -> Duration {
+    config.timeout.unwrap_or(DEFAULT_TIMEOUT)
+}
 
 /// Resolve the `claude` binary: `CLAUDE_BINARY` env var first, else `PATH` lookup.
 ///
@@ -37,7 +48,8 @@ fn resolve_binary() -> Result<PathBuf> {
 /// Spawns `claude` (env inherited from the current process, since auth is free on
 /// the subscription, plus any `config.env` overrides and `config.cwd`) with the
 /// argv built from `config` and `prompt`, captures stdout, and wraps the whole
-/// call in one [`tokio::time::timeout`].
+/// call in one [`tokio::time::timeout`] of [`effective_timeout`]`(config)` —
+/// `config.timeout` when set, else [`DEFAULT_TIMEOUT`] (300s).
 ///
 /// When `config.isolated` is `true`, an [`IsolatedConfigDir`] is built first and
 /// its path is set as `CLAUDE_CONFIG_DIR` in the child's env, so the subprocess
@@ -125,7 +137,7 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
         Ok(outcome)
     };
 
-    let result = match tokio::time::timeout(DEFAULT_TIMEOUT, call).await {
+    let result = match tokio::time::timeout(effective_timeout(config), call).await {
         Ok(result) => result,
         Err(_elapsed) => Err(Error::Timeout),
     };

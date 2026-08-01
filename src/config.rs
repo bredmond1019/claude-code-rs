@@ -1,5 +1,7 @@
 //! Subprocess configuration for the `claude` CLI and its argv builder.
 
+use std::time::Duration;
+
 /// Configuration for a single `claude` CLI invocation.
 ///
 /// Covers the ported flags from `claude-sdk-rs`'s config plus the env/cwd
@@ -64,6 +66,20 @@ pub struct Config {
     /// pair; when `None`, the flag is omitted entirely (today's schemaless
     /// behavior unchanged).
     pub json_schema: Option<serde_json::Value>,
+
+    /// Optional override for `execute()`'s whole-call timeout.
+    ///
+    /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
+    /// output. It only sets the duration of the Rust-side
+    /// [`tokio::time::timeout`](https://docs.rs/tokio/latest/tokio/time/fn.timeout.html)
+    /// that wraps the spawn-and-wait of the `claude` subprocess.
+    ///
+    /// `None` (the `#[derive(Default)]` value) preserves `execute()`'s built-in
+    /// `DEFAULT_TIMEOUT` of 300 seconds, so every existing caller's behavior is
+    /// unchanged. `Some(duration)` widens or narrows that timeout for this call
+    /// — useful for long-running agentic work (multi-file writes, cold
+    /// worktrees) that legitimately exceeds five minutes.
+    pub timeout: Option<Duration>,
 }
 
 impl Config {
