@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-07-19T01:01:54Z"
+timestamp: "2026-08-06T23:40:00Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,38 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-08-06 — Substrate lane C4: closed the timeout ticket, fixed a docs gap
+
+**What:** Drove C4 of the `demand-ready` substrate lane —
+`CC.ticket.configurable-call-timeout` — to `closed`. The engine passed 4/4 tasks but wrote **no
+code**: tasks 1–4 had already been implemented and merged on 2026-08-01 (`2eef7f0` / `66b4551` /
+`16d471b`) while `state.json` still said `open`, so the run was a no-op re-validation. Verified
+independently rather than on the engine's word — fmt, clippy, 46 tests, release build all green, and
+both ticket tests (`effective_timeout_defaults_to_the_constant_and_honors_an_override`,
+`configured_timeout_fires_before_a_slow_binary_finishes`) confirmed present and passing. Repaired
+three state-write defects the bookkeep left behind: `tasks.md` metadata stuck at `status: Not started
+/ last-run: never`, a stale `focus.next` still listing the closed block, and `updated` frozen at
+2026-07-18. Ran the downstream consumer check against `engine-rs` (the only path-dependant): `cargo
+test --no-run --locked` exit 0, `Cargo.lock` unmutated. Separately, a `/close-out` docs sweep found
+`Config::dangerously_skip_permissions` — a public field emitting a real `--dangerously-skip-permissions`
+flag, with its own passing test — had zero coverage anywhere under `docs/`; fixed in `97fa51f`,
+bringing `docs/api.md` to 13/13 field parity with `src/config.rs` and completing
+`docs/architecture.md`'s `Config` prose.
+
+**Why:** The ticket existed to unblock `engine-rs`, whose `ImplementTaskNode` was failing legitimate
+long implement calls at exactly 300.18s against a hardcoded, unoverridable `DEFAULT_TIMEOUT`. Closing
+it released `engine-rs:EN.ticket.call-timeout-policy-knob` (`blocked` → `open`), which is lane C5.
+The five-day gap between the code landing and the graph reflecting it is why the roadmap advertised
+finished work as ready — more evidence for `base-template:BT.ticket.sdlc-state-write-reliability`.
+The docs gap was unrelated to the block and predated it; it surfaced only because the sweep compared
+the whole `Config` surface against source instead of just the block's diff, and nothing in
+`harness.json` can catch a missing table row (new carryover: `config-field-doc-parity-ungated`).
+
+**Refs:** `planning/ticket-configurable-call-timeout/tasks.md`;
+`agentic-portfolio/planning/demand-ready/roadmap.md` (lane C4); D2
 
 ---
 
