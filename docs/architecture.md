@@ -46,8 +46,12 @@ src/
 - **`Config`** (`src/config.rs`) — CLI invocation config: `system_prompt`, `append_system_prompt`,
   `model`, `allowed_tools`/`disallowed_tools`, `continue_session`/`resume`, plus `cwd`/`env` overrides
   (now applied by `execute()` via `Command::current_dir`/`Command::envs`) and the opt-in `isolated: bool`
-  switch (default `false`) that routes the call through `IsolatedConfigDir`. `build_args(prompt)`
+  switch (default `false`) that routes the call through `IsolatedConfigDir`. Three further opt-ins, all
+  inert at their defaults: `dangerously_skip_permissions: bool` (appends
+  `--dangerously-skip-permissions`), `json_schema: Option<serde_json::Value>` (`--json-schema`), and
+  `timeout: Option<Duration>` (Rust-side only, never argv). `build_args(prompt)`
   builds the exact argv (always appending `--output-format json`). Re-exported from `lib.rs`.
+  Full field-by-field table: [`api.md`](api.md).
 - **`IsolatedConfigDir`** (`src/isolation.rs`) — RAII guard that builds a throwaway
   `CLAUDE_CONFIG_DIR` containing a `refreshToken`-redacted copy of `.credentials.json` (mode `0600`,
   sourced from the macOS Keychain then `~/.claude/.credentials.json` fallback) and an optional copy
