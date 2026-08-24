@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-08-06T23:40:00Z"
+timestamp: "2026-08-24T20:05:00Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,39 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-08-24 — Published `claude-sdk-rs` 2.0.0 to crates.io
+
+**What:** Drove `CC.ticket.publish-to-crates-io` to `closed` via `/begin-session
+operator-crates-io-publish`. Re-verified the ticket's premises (`claude-code-rs` still owned by a
+third party on crates.io at `0.1.1`; `claude-sdk-rs` still ours, `v1.0.2`/1,888 downloads),
+scoped the package's `include` list to `src/`/`tests/`/`README`/`CHANGELOG`/`LICENSE-*` (the prior
+`cargo package --list` was shipping the entire internal SDLC harness — `.claude/`, `.agents/`,
+`.github/`, `hooks/`, `scripts/` — into the public tarball), renamed the crate to `claude-sdk-rs`
+2.0.0, added manifest metadata, wrote a `CHANGELOG.md`, and rewrote `README.md` for a stranger
+(later stripped its OKF frontmatter and reshaped it into a normal crate README on your request,
+since it renders as the crates.io/docs.rs front page). Aliased the `engine-rs` path dependency via
+Cargo's `package` key — zero `.rs` files changed, full test suite compiles. Reconciled
+`github.com/bredmond1019/claude-sdk-rs`: discovered `main` had never advanced past `1.0.1` even
+though crates.io shows `1.0.2` published (evidently cut from an uncommitted local copy) — pulled
+the real `1.0.2` tarball from crates.io, synced it onto a `legacy-v1` branch, tagged that
+`v1.0.2`, pushed both, *then* force-pushed this crate's source onto `main`. Ran `cargo publish`,
+then a clean-room consumer check (fresh `cargo add claude-sdk-rs@2.0.0` outside the fleet compiles
+the README example; `=1.0.2` still resolves). Along the way, found and ruled out a second,
+unrelated `claude-sdk-rs` at `potential-portfolio-projects/` — a trimmed-v1 effort, gate-passed
+2026-06-18 but never published; confirmed with you it's superseded, not a conflict.
+
+**Why:** The 2026-08-02 review's top finding was that the practice's strongest engineering had
+zero public proof. This crate's two differentiators (subscription/Keychain auth, a bidirectional
+drift-canary test) needed a public artifact under a name that already carries download history —
+`claude-sdk-rs`'s 1,888 downloads and existing docs.rs page — rather than starting `claude-code-rs`
+from zero. Also fixed the CLAUDE.md drift the ticket flagged: HQ's own sub-projects table still
+listed `claude-sdk-rs/` as a dead local directory.
+
+**Refs:** `core/claude-code-rs/planning/blocks/CC.ticket.publish-to-crates-io.json`,
+https://crates.io/crates/claude-sdk-rs/2.0.0
 
 ---
 
