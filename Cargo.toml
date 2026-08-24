@@ -1,8 +1,23 @@
 [package]
-name = "claude-code-rs"
-version = "0.1.0"
+name = "claude-sdk-rs"
+version = "2.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "A lean async Rust SDK that runs Claude Code as a subprocess on a flat-rate subscription (not metered API credits)."
+documentation = "https://docs.rs/claude-sdk-rs"
+homepage = "https://github.com/bredmond1019/claude-sdk-rs"
+repository = "https://github.com/bredmond1019/claude-sdk-rs"
+readme = "README.md"
+keywords = ["claude", "anthropic", "cli", "subprocess", "sdk"]
+categories = ["api-bindings", "asynchronous"]
+include = [
+    "src/**/*",
+    "tests/**/*",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
 
 [dependencies]
 tokio = { version = "1", features = ["process", "rt", "macros", "time"] }

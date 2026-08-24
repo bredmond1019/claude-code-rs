@@ -1,11 +1,11 @@
 //! Integration tests for the credential isolation seam (`CC.1.B`).
 //!
-//! Exercises the public API only: [`claude_code_rs::IsolatedConfigDir`] and
-//! [`claude_code_rs::execute`] with `Config { isolated: true, .. }`. All
+//! Exercises the public API only: [`claude_sdk_rs::IsolatedConfigDir`] and
+//! [`claude_sdk_rs::execute`] with `Config { isolated: true, .. }`. All
 //! credential sourcing here is injected via `with_sources` — none of these
 //! tests touch the real macOS Keychain or `~/.claude/`.
 
-use claude_code_rs::{Config, IsolatedConfigDir};
+use claude_sdk_rs::{Config, IsolatedConfigDir};
 
 /// Building the isolated dir from a canned credentials JSON and a copied
 /// `.claude.json` source produces the expected `~/.claude/`-shaped layout:
@@ -117,8 +117,8 @@ async fn live_isolated_execute_does_not_disturb_interactive_session() {
     let interactive_config = Config::default();
 
     let (isolated_result, interactive_result) = tokio::join!(
-        claude_code_rs::execute(&isolated_config, "Say hello in one word."),
-        claude_code_rs::execute(&interactive_config, "Say hi in one word."),
+        claude_sdk_rs::execute(&isolated_config, "Say hello in one word."),
+        claude_sdk_rs::execute(&interactive_config, "Say hi in one word."),
     );
 
     let isolated_outcome = isolated_result.expect("isolated execute should succeed");

@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 
-use claude_code_rs::parse::parse_result;
+use claude_sdk_rs::parse::parse_result;
 
 /// Real capture, `claude` 2.1.211, success envelope.
 const FIXTURE_SUCCESS: &str = include_str!("fixtures/cli-result-2.1.211.json");
@@ -77,7 +77,7 @@ fn captured_envelope_has_no_top_level_model_or_content() {
 }
 
 /// The error envelope shares `result`, so it parses cleanly — `execute()` is what turns `is_error`
-/// into an [`claude_code_rs::Error::Api`]. Parsing must not itself fail here.
+/// into an [`claude_sdk_rs::Error::Api`]. Parsing must not itself fail here.
 #[test]
 fn parses_captured_error_envelope() {
     let outcome = parse_result(FIXTURE_ERROR).expect("real error capture must parse");

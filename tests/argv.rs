@@ -4,7 +4,7 @@
 //! flag names, and the trailing `--output-format json` — so any drift in the
 //! builder's shape is caught here rather than downstream in `execute()`.
 
-use claude_code_rs::Config;
+use claude_sdk_rs::Config;
 
 #[test]
 fn minimal_config_builds_prompt_and_output_format_only() {
