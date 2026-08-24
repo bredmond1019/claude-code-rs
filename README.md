@@ -1,14 +1,3 @@
----
-type: Index
-title: claude-sdk-rs
-description: A lean async Rust SDK that runs Claude Code as a subprocess on a flat-rate subscription (not metered API credits).
-doc_id: readme
-layer: [factory]
-status: active
-keywords: [project readme, prerequisites, setup, getting started]
-related: [context, master-plan, planning-index]
----
-
 # claude-sdk-rs
 
 [![Crates.io](https://img.shields.io/crates/v/claude-sdk-rs.svg)](https://crates.io/crates/claude-sdk-rs)
@@ -21,20 +10,17 @@ separate API key or per-token billing.
 
 **2.0.0 is a ground-up rewrite of the `claude-sdk-rs` 1.x line, with no migration path.** See
 [CHANGELOG.md](./CHANGELOG.md) for what changed and why. If you depend on 1.x, pin
-`claude-sdk-rs = "=1.0.2"` — that version is frozen on the [`legacy-v1`](https://github.com/bredmond1019/claude-sdk-rs/tree/legacy-v1)
-branch.
+`claude-sdk-rs = "=1.0.2"` — that version is frozen on the
+[`legacy-v1`](https://github.com/bredmond1019/claude-sdk-rs/tree/legacy-v1) branch.
 
-## How it works
+## Why a subprocess wrapper instead of an HTTP client
 
-There is no HTTP client here. `execute()` spawns the `claude` binary as a subprocess
-(`tokio::process::Command`, `.kill_on_drop(true)`, wrapped in a single whole-call timeout), passes
-your prompt and options as CLI flags, and parses the CLI's `--output-format json` response into a
-typed `Outcome`. Authentication is whatever the `claude` CLI itself is already using — your Claude
-subscription login, sourced from the macOS Keychain or `~/.claude/.credentials.json`.
-
-**Platform note:** the built-in credential isolation (`Config.isolated`) sources credentials via
-the macOS Keychain with a file fallback. It has only been exercised on macOS; other platforms may
-need the file-based fallback path exclusively.
+- **Subscription auth, not metered API keys.** Every call rides your existing Claude Code login —
+  no separate API billing to configure or reconcile.
+- **Schema locked to captured CLI output, not memory.** `tests/fixtures/` holds real captured CLI
+  responses; `tests/parse_schema.rs` asserts against them, and an ignored canary test diffs live
+  CLI output against the fixtures on demand — so a CLI schema change surfaces as a failing test,
+  not silent drift in production.
 
 ## Prerequisites
 
@@ -43,13 +29,11 @@ need the file-based fallback path exclusively.
   `PATH` or pointed to via the `CLAUDE_BINARY` env var
 - A Claude subscription (Pro/Max) — this crate does not use API keys
 
-## Install
+## Quickstart
 
 ```bash
 cargo add claude-sdk-rs
 ```
-
-## Example
 
 ```rust,no_run
 use claude_sdk_rs::{execute, Config};
@@ -63,21 +47,22 @@ async fn main() -> claude_sdk_rs::Result<()> {
 }
 ```
 
+## How it works
+
+There is no HTTP client here. `execute()` spawns the `claude` binary as a subprocess
+(`tokio::process::Command`, `.kill_on_drop(true)`, wrapped in a single whole-call timeout), passes
+your prompt and options as CLI flags, and parses the CLI's `--output-format json` response into a
+typed `Outcome`. Authentication is whatever the `claude` CLI itself is already using — your Claude
+subscription login, sourced from the macOS Keychain or `~/.claude/.credentials.json`.
+
 `Config` also covers `system_prompt`, `model`, `allowed_tools`/`disallowed_tools`,
 `continue_session`/`resume` (multi-turn), `json_schema` (structured output), `isolated`
 (credential isolation for concurrent callers), and `timeout` (per-call override of the 300s
 default). See [docs.rs](https://docs.rs/claude-sdk-rs) for the full API.
 
-## Why a subprocess wrapper instead of an HTTP client
-
-Two differentiators this crate is built around:
-
-- **Subscription auth, not metered API keys.** Every call rides your existing Claude Code login —
-  no separate API billing to configure or reconcile.
-- **Schema locked to captured CLI output, not memory.** `tests/fixtures/` holds real captured CLI
-  responses; `tests/parse_schema.rs` asserts against them, and an ignored canary test diffs live CLI
-  output against the fixtures on demand — so a CLI schema change surfaces as a failing test, not
-  silent drift in production.
+**Platform note:** the built-in credential isolation (`Config.isolated`) sources credentials via
+the macOS Keychain with a file fallback. It has only been exercised on macOS; other platforms may
+need the file-based fallback path exclusively.
 
 ## Tests
 
