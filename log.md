@@ -16,6 +16,18 @@ related: [status, context]
 
 ---
 
+## 2026-08-27 — Build cleanup: `[profile.dev]` link-time fix
+
+Added `[profile.dev]` (`line-tables-only` debug info + unpacked split-debuginfo) to `Cargo.toml` —
+same fleet-wide build-speed pass applied across every `core/*` Rust repo this session. No dead
+`sccache` config here to remove (never configured). `cargo audit` came back clean, no dependency
+changes needed. fmt/clippy/`cargo test` all pass. See HQ's `docs/infrastructure.md`'s "Rust build
+artifacts" section and `docs/rust-dependency-audit.md`.
+
+```
+555f446 perf(build): add profile.dev to cut link time
+```
+
 ## 2026-08-24 — Published `claude-sdk-rs` 2.0.0 to crates.io
 
 **What:** Drove `CC.ticket.publish-to-crates-io` to `closed` via `/begin-session
