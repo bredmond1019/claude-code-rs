@@ -6,23 +6,64 @@ doc_id: architecture
 layer: [engine, infra]
 project: claude-code-rs
 status: active
-keywords: [architecture, subprocess, tokio, credential-isolation, module-map]
+keywords: [architecture, subprocess, tokio, credential-isolation, module-map, data-flow]
 related: [api]
 ---
 
 # claude-code-rs — Architecture
 
+This page explains **how one call travels through the crate** — which module does what, and where
+a failure comes from. For the field-by-field public surface, read [api.md](api.md); to just get
+something running, read the repo [`README.md`](../README.md).
+
+## What this page is for
+
+You are here because a call did something you did not expect, or because you are changing the
+crate and need to know what else moves. Read the diagram, then the section that owns the part you
+care about.
+
 ## Overview
 
-A lean async Rust SDK that drives the `claude` CLI as a subprocess (`claude -p`) on the flat-rate
-subscription rather than Anthropic API credits. One placeholder line per section below — `/document`
-and `/update-docs --bootstrap` fill these in as blocks ship.
+There is no HTTP client here. This is a lean async Rust SDK that drives the `claude` CLI as a
+subprocess (`claude -p`), authenticated by the flat-rate subscription the CLI is already logged
+into rather than by metered API credits. Everything below is one process spawning another and
+parsing its JSON.
+
+```mermaid
+flowchart TD
+    A["Caller builds a Config"] --> B["execute(&config, prompt)"]
+    B --> C{"config.isolated?"}
+    C -- "true" --> D["IsolatedConfigDir<br/>temp CLAUDE_CONFIG_DIR,<br/>refreshToken redacted"]
+    C -- "false" --> E
+    D --> E["spawn `claude` with build_args(prompt)<br/>kill_on_drop, whole-call timeout"]
+    E --> F{"stdout empty?"}
+    F -- "yes" --> G["Error::Cli { status, stderr }"]
+    F -- "no" --> H["parse::parse_result"]
+    H --> I{"is_error?"}
+    I -- "yes" --> J["Error::Api { status, message }"]
+    I -- "no" --> K["Outcome"]
+```
+
+In sentences, for the same thing:
+
+1. You build a [`Config`](api.md#config) describing one call.
+2. If `Config::isolated` is `true`, `execute()` builds an [`IsolatedConfigDir`](#core-types)
+   **before** spawning anything, so a credential problem surfaces without burning a call.
+3. `execute()` resolves the `claude` binary, spawns it with `Config::build_args(prompt)`, and wraps
+   the whole thing in a single timeout.
+4. An empty stdout means the CLI itself failed; a parsed envelope with `is_error: true` means the
+   API call failed. Otherwise you get an [`Outcome`](api.md#outcome).
+
+**The only step you perform is step 1.** The rest is `execute()`.
 
 ## Module Map
 
+Six files, each one job. The block ids in parentheses (`CC.1.A`) are this repo's own planning
+records and mean nothing to a consumer — ignore them unless you are working the plan.
+
 ```
 src/
-├── lib.rs        ← crate root; re-exports Config/Error/Result/execute/Outcome; declares module skeleton
+├── lib.rs        ← crate root; re-exports Config/Error/Result/execute/Outcome/IsolatedConfigDir
 ├── error.rs      ← thiserror crate-level Error enum + Result<T> alias (implemented, CC.0.A)
 ├── config.rs     ← Config struct + build_args() CLI arg-builder (implemented, CC.1.A)
 ├── execute.rs    ← async execute(): binary resolution, spawn, whole-call timeout (config.timeout, else 300s), kill_on_drop (implemented, CC.1.A)
@@ -35,6 +76,9 @@ src/
 `IsolatedConfigDir` and sets `CLAUDE_CONFIG_DIR` for the child process (`CC.1.B`).
 
 ## Core Types
+
+Everything a caller touches. All six are re-exported from `lib.rs`, so `use claude_sdk_rs::X`
+works for each. Field-by-field detail lives in [api.md](api.md); this list is the orientation.
 
 - **`Error`** (`src/error.rs`) — crate-level error enum via `thiserror::Error`, covering
   `BinaryNotFound`, `Spawn(std::io::Error)`, `Timeout`, `Parse(serde_json::Error)`,
@@ -60,7 +104,8 @@ src/
   claude_json_src)` is an injectable constructor for tests. Re-exported from `lib.rs`.
 - **`Outcome`** (`src/parse.rs`) — parsed CLI result: `cost_usd` (from `total_cost_usd`), `usage`
   (`Usage`), `model_usage` (`BTreeMap<String, ModelUsage>`, from `modelUsage`), `text` (from
-  `result`), `is_error`, and `api_error_status`. There is **no** top-level `model` field — the model
+  `result`), `is_error`, `api_error_status`, and `structured_output` (present only when the call
+  set `Config::json_schema`). There is **no** top-level `model` field — the model
   name exists only as a `model_usage` key; `Outcome::primary_model()` picks one by a documented
   heuristic (cost, then output tokens, then key order) and returns `None` when none ran.
   Re-exported from `lib.rs`. **The authority for this shape is `tests/fixtures/`** — real captured
@@ -71,6 +116,9 @@ src/
   emits these keys in camelCase, unlike the snake_case top-level `usage`.
 
 ## Data Flow
+
+The diagram above in prose, with the details it could not carry — env handling, guard lifetime,
+and exactly how the two failure modes are told apart.
 
 Caller builds a `Config` → `execute(&config, prompt)` resolves the `claude` binary (`CLAUDE_BINARY`
 env var, else `PATH` via `which`), applies `config.cwd` (`Command::current_dir`) and `config.env`

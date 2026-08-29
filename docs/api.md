@@ -6,27 +6,42 @@ doc_id: api
 layer: [engine, infra]
 project: claude-code-rs
 status: active
-keywords: [api, library, execute, config, outcome, consumer-contract]
+keywords: [api, library, execute, config, outcome, consumer-contract, isolation]
 related: [architecture]
 ---
 
 # claude-code-rs — Public API
 
-> This crate is a **library** (no binary/CLI of its own). The stack-standard `cli.md` slot is
-> replaced by this API reference. One placeholder line per section — `/document` fills these in as
-> blocks ship.
+The complete public surface, field by field. This crate is a **library** — there is no binary or
+CLI of its own, so this page takes the place of the usual `cli.md`. If you want to get something
+running rather than look a field up, start at the repo [`README.md`](../README.md); if you want to
+know how a call flows, read [architecture.md](architecture.md).
 
-## Synopsis
+## Quickstart
+
+The crate is published as **`claude-sdk-rs`** — the repo directory is `claude-code-rs`, but the
+crate name and the Rust module path are `claude_sdk_rs`.
+
+```bash
+cargo add claude-sdk-rs
+```
+
+One call, default everything:
 
 ```rust
-use claude_code_rs::{Config, execute};
+use claude_sdk_rs::{execute, Config};
 
 let config = Config::default();
 let outcome = execute(&config, "Say hello in one word.").await?;
-println!("{} cost ${}", outcome.model, outcome.cost_usd);
+println!("{} cost ${}", outcome.text, outcome.cost_usd);
+// The model name is NOT a top-level field — see `Outcome::primary_model()` below.
+println!("served by {:?}", outcome.primary_model());
 ```
 
 ## Public Functions
+
+One function does the work. Everything else on this page either configures it or describes what it
+gives back.
 
 - **`async fn execute(config: &Config, prompt: &str) -> Result<Outcome>`** (`src/execute.rs`) — the
   single entry point. Resolves the `claude` binary (`CLAUDE_BINARY` env var, else `PATH` lookup via
@@ -41,7 +56,12 @@ println!("{} cost ${}", outcome.model, outcome.cost_usd);
 
 ## Config
 
-`Config` (`src/config.rs`, `Debug + Clone + Default`) fields mapping to CLI flags:
+`Config` describes a single call. It derives `Default`, so most callers write `Config::default()`
+and override one or two fields with struct-update syntax. Most fields become a CLI flag on the
+spawned `claude` process; four (`cwd`, `env`, `isolated`, `timeout`) are handled Rust-side and
+never appear in argv.
+
+`Config` (`src/config.rs`, `Debug + Clone + Default`) fields:
 
 | Field | CLI flag |
 |---|---|
@@ -67,6 +87,10 @@ by `execute()`, and `timeout` only sets the duration of `execute()`'s Rust-side 
 
 ## IsolatedConfigDir
 
+Interactive `claude` sessions and SDK-driven subprocess calls share one credentials file. If a
+background call refreshes the OAuth token, the single-use refresh token is consumed and your
+interactive session is silently logged out. This guard is the fix.
+
 `IsolatedConfigDir` (`src/isolation.rs`) — an RAII guard used when `Config::isolated` is `true`. It
 builds a throwaway directory laid out like `~/.claude/`, suitable for pointing an isolated
 subprocess at via `CLAUDE_CONFIG_DIR`, so a concurrent SDK-driven call cannot consume the
@@ -84,10 +108,13 @@ single-use OAuth refresh token and silently revoke an interactive session's cred
 
 ## Outcome
 
+What you get back on success: the reply text, what it cost, how many tokens it used, and which
+model served it.
+
 `Outcome` (`src/parse.rs`) mirrors the CLI's `--output-format json` envelope. **The authority for
 this shape is `tests/fixtures/` — real captured responses — not this page.** If the two disagree,
-the fixtures are right and this page is stale. See `tests/fixtures/README.md` and decision
-[D2](../planning/decisions/D2-cli-schema-provenance.md).
+the fixtures are right and this page is stale. See [`tests/fixtures/README.md`](../tests/fixtures/README.md) and this repo's decision D2
+(`planning/decisions/D2-cli-schema-provenance.md` — in the gitignored brain vault, not on GitHub).
 
 - `cost_usd: f64` — from `total_cost_usd`.
 - `usage: Usage` — `input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
@@ -114,6 +141,8 @@ returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`,
 `is_error`). Unknown fields are ignored, so a vendor addition never breaks the parse.
 
 ## Consumer Contract
+
+Who else depends on this surface, and why that dependency needs no version pin.
 
 `engine-rs`'s `ClaudeCodeStep::process` (EN.2.A) calls `execute`, writes
 `{content, cost_usd, model}` into its own `TaskContext::nodes` entry, and stamps `NodeRun.usage`.
