@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-08-24T20:05:00Z"
+timestamp: "2026-08-29T13:40:00Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -15,6 +15,35 @@ related: [status, context]
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## 2026-08-29 — Docs cleanup pass over `docs/` (write-repo-doc standard)
+
+**What:** Applied the five-class docs cleanup to this repo's three `docs/` files. Two real defects,
+both invisible to the gates: `docs/api.md`'s synopsis shipped **non-compiling example code** —
+`use claude_code_rs::{...}` (the crate is `claude-sdk-rs` / module path `claude_sdk_rs`) and
+`outcome.model`, a field that does not exist and that the same page says does not exist 90 lines
+lower — and two markdown links pointed into the **gitignored** `planning/` vault, which resolve
+locally and 404 on GitHub. Also added the missing `Outcome::structured_output` field to
+`docs/architecture.md`, rewrote `docs/index.md` as a capability catalogue derived from `pub use` in
+`src/lib.rs` (8 rows, plus rows for `tests/fixtures/README.md` and `hooks/README.md`, previously
+referenced nowhere), gave both reference docs a Quickstart and plain-English section openers, added
+a mermaid call-flow diagram plus the same content in sentences, and dropped the stale
+"`/document` fills these in as blocks ship" scaffold text.
+
+**Verified against source, not doc titles:** every catalogue row comes from `src/lib.rs`'s `pub use`;
+crate name from `Cargo.toml`. No files moved — `docs/` has three files, so a `docs/<domain>/` split
+would risk the corpus gate for no gain. `scripts/check_block_records.py` and `hooks/` are documented
+nowhere in `docs/`; they are harness-synced, not SDK surface, so only a `hooks/README.md` index row
+was added.
+
+`bastion validate-brain --links` / `--structure` / `--graph`, run separately: **0 errors each**.
+
+Filed `reference[]` entry `public-docs-traps-crate-name-and-gitignored-planning` — both traps are
+permanently true and neither is catchable by the link gate.
+
+```
+cee302c docs: cleanup pass over docs/ to the write-repo-doc standard
+```
 
 ## 2026-08-27 — Build cleanup: `[profile.dev]` link-time fix
 
