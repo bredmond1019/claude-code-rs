@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-08-29T13:40:00Z"
+timestamp: "2026-09-01T00:37:51Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,42 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-08-31 — `planning/context.md` audit + `planning/index.md` table repair
+
+**What:** Audited `planning/context.md` against the repo's actual state — it was still largely the
+unfilled OKF scaffold. Four classes of fix, applied surgically: (1) the **Document Set table** listed
+7 files against ~17 real `planning/` entries — added `knowledge.md`, `memory.md`, `state.json`,
+`blocks/`, `harness.examples.md`, `artifacts/`, `archive/` + `archive-report/`, `orchestration-run/`,
+`handoff.md`, `<concept>/`, and added a **second table for the repo-root public docs** the file never
+mentioned at all (`README.md`, `docs/{index,architecture,api}.md`, `CHANGELOG.md`, `CLAUDE.md`, the two
+sub-READMEs), with the `planning/`-is-gitignored reason the split exists. Entries are code spans, not
+markdown links — a relative link out of `planning/` resolves against the vault, not the repo, and would
+dead-link `--links`. (2) The **phase sequence** was four generic placeholder phases; replaced with the
+real three from `master-plan.md` with block IDs (`CC.0.A` … `CC.2.C`). (3) **Governing Principles**
+carried 3 rules + 2 empty placeholders against `CLAUDE.md`'s **6** numbered standing rules — now 8:
+added OKF-frontmatter/index, decisions-append-only, unverified-handles, and never-push-from-inside,
+plus D2 schema-provenance and just-in-time scope, under a header naming `CLAUDE.md` canonical.
+(4) **Fast Facts** had four empty placeholders; filled from `Cargo.toml` and `master-plan.md`, added the
+`claude-sdk-rs`-vs-`claude-code-rs` name split, and put an "evergreen only" banner on it routing
+volatile facts to `status.md`. Also filled the two stub prose sections and added `project:` to the
+frontmatter.
+
+Then repaired `planning/index.md`, which had a **blank line splitting its Files table** — it terminated
+the table early, so the `<concept>/` row rendered as loose text. Dropped the orphaned
+`ticket-publish-to-crates-io/` row (cold, and `archive/index.md` already carries the full row for it),
+rewrote the `archive/` row to point at that registry instead of hand-listing 2 of 7 folders, and added
+the two live entries Standing Rule 7 wanted: `state.json` and `blocks/`.
+
+**Why:** `context.md` is the "read this first" orientation doc — a scaffold full of `<!-- -->`
+placeholders orients nobody, and its condensed standing-rules list had silently fallen two rules behind
+`CLAUDE.md`, including the load-bearing "never `git push` this repo from inside it." The `index.md`
+table break was invisible to the gates: `validate-brain` parses index rows, not rendered markdown, so a
+row demoted to prose passes structure while disappearing from the map a newcomer reads.
+
+**Refs:** `planning/context.md`, `planning/index.md`, `CLAUDE.md` standing rules 1–6
 
 ---
 
