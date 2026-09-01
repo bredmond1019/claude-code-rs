@@ -125,6 +125,24 @@ pub struct Outcome {
     #[serde(default)]
     pub api_error_status: Option<u16>,
 
+    /// The CLI session this call ran under (CLI: `session_id`).
+    ///
+    /// Present on **both** the success and the error envelope, so a failed call is still
+    /// attributable — a bailed attempt consumed tokens like any other.
+    ///
+    /// This is the exact join key to the session transcript, which the CLI writes to
+    /// `~/.claude/projects/<project>/<session_id>.jsonl` — the id is literally the filename stem,
+    /// and the file's own `sessionId` field repeats it. Consumers that attribute real token usage
+    /// (rather than an estimate) read that transcript; without this field the join can only be
+    /// inferred from a timestamp window.
+    ///
+    /// Defaulted, not required, per the leniency policy above: an absent `session_id` costs a join
+    /// key on a call that is still fully described by `usage`/`text`/`is_error` — less detail, not
+    /// lost data — and a required field would turn a CLI that stops emitting it into an outage.
+    /// `None` means the envelope carried no id at all; the CLI never emits an empty one.
+    #[serde(default)]
+    pub session_id: Option<String>,
+
     /// The parsed structured output, when a `Config.json_schema` was supplied (CLI:
     /// `structured_output`).
     ///
@@ -206,6 +224,7 @@ mod tests {
             text: "hi".to_string(),
             is_error: false,
             api_error_status: None,
+            session_id: None,
             structured_output: None,
         }
     }

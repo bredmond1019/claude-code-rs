@@ -131,6 +131,9 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
             return Err(Error::Api {
                 status: outcome.api_error_status,
                 message: outcome.text,
+                session_id: outcome.session_id,
+                cost_usd: outcome.cost_usd,
+                usage: outcome.usage,
             });
         }
 
@@ -358,9 +361,54 @@ mod tests {
             .expect_err("an is_error envelope must not surface as Ok");
 
         match err {
-            Error::Api { status, message } => {
+            Error::Api {
+                status,
+                message,
+                session_id,
+                ..
+            } => {
                 assert_eq!(status, Some(404));
                 assert_eq!(message, "model not found");
+                assert_eq!(
+                    session_id, None,
+                    "this fixture emits no session_id, so the error must carry None"
+                );
+            }
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+    }
+
+    /// A billed failure must stay attributable: the CLI reached the API, consumed tokens, and
+    /// reported `is_error` — so the envelope's `session_id` has to survive the conversion into
+    /// `Error::Api` rather than being dropped with the discarded `Outcome`. Without this, a cost
+    /// comparison silently understates exactly the attempts it most needs to see.
+    #[cfg(unix)]
+    #[test]
+    fn is_error_envelope_carries_its_session_id_into_the_api_error() {
+        let (_dir, script_path) = write_fake_binary(
+            "printf '{\"total_cost_usd\":0.42,\"usage\":{\"input_tokens\":1200,\"output_tokens\":34},\"modelUsage\":{},\"is_error\":true,\"subtype\":\"success\",\"api_error_status\":529,\"session_id\":\"ffffffff-1111-2222-3333-444444444444\",\"result\":\"overloaded\"}'\nexit 1\n",
+        );
+
+        let err = try_run_with_fake_binary(&script_path, &Config::default())
+            .expect_err("an is_error envelope must not surface as Ok");
+
+        match err {
+            Error::Api {
+                session_id,
+                cost_usd,
+                usage,
+                ..
+            } => {
+                assert_eq!(
+                    session_id.as_deref(),
+                    Some("ffffffff-1111-2222-3333-444444444444"),
+                    "a billed failure must stay joinable to its transcript"
+                );
+                // The whole point: this attempt was BILLED. The charge and the tokens must survive
+                // the conversion, not just the id.
+                assert!((cost_usd - 0.42).abs() < 1e-9);
+                assert_eq!(usage.input_tokens, 1200);
+                assert_eq!(usage.output_tokens, 34);
             }
             other => panic!("expected Error::Api, got {other:?}"),
         }

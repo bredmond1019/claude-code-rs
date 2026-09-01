@@ -89,7 +89,8 @@ this table, the next person "helpfully" parses `subtype` and reintroduces the bu
 | `subtype` | **IGNORE — it lies** | Reports `"success"` even when `is_error: true`. Do not use it to detect errors. |
 | `type` | ignore | Always `"result"` for `--output-format json`. |
 | `stop_reason`, `terminal_reason` | ignore | `terminal_reason` does track errors (`"api_error"`), but `is_error` is simpler and sufficient. |
-| `session_id`, `uuid` | ignore | Identifying; redacted here. |
+| `session_id` | **depend** | → `Outcome::session_id`. Present on **both** envelopes. The exact join key to the session transcript at `~/.claude/projects/<project>/<session_id>.jsonl` (the id is the filename stem). Redacted here to the all-zero sentinel — the tests assert type and presence, never the value. |
+| `uuid` | ignore | Identifying; redacted here. |
 | `duration_ms`, `duration_api_ms`, `ttft_ms`, `ttft_stream_ms`, `time_to_request_ms` | ignore | Timing. The three `ttft`/`time_to_request` keys are **absent from the error envelope** — which is why the canary compares success-to-success only. |
 | `num_turns`, `permission_denials`, `fast_mode_state` | ignore | Not needed by any consumer today. |
 

@@ -146,6 +146,54 @@ fn parses_captured_success_envelope_without_structured_output() {
     );
 }
 
+/// `session_id` is the exact join key to the session transcript
+/// (`~/.claude/projects/<project>/<session_id>.jsonl`), so a consumer attributing real token usage
+/// depends on it being read off the SUCCESS envelope.
+#[test]
+fn parses_session_id_from_captured_success_envelope() {
+    let outcome = parse_result(FIXTURE_SUCCESS).expect("real success capture must parse");
+
+    assert_eq!(
+        outcome.session_id.as_deref(),
+        Some("00000000-0000-0000-0000-000000000000"),
+        "success capture must carry the (redacted) session_id"
+    );
+}
+
+/// The ERROR envelope carries `session_id` too, and this is the case that matters most for cost
+/// attribution: a bailed attempt still consumed tokens, so dropping it would understate exactly the
+/// runs a cost comparison cares about. Pinned against the real error capture, not a hand-written
+/// envelope.
+#[test]
+fn parses_session_id_from_captured_error_envelope() {
+    let outcome = parse_result(FIXTURE_ERROR).expect("real error capture must parse");
+
+    assert!(outcome.is_error, "fixture must be the error envelope");
+    assert_eq!(
+        outcome.session_id.as_deref(),
+        Some("00000000-0000-0000-0000-000000000000"),
+        "error capture must carry the (redacted) session_id"
+    );
+}
+
+/// Per the leniency policy, an absent `session_id` costs a join key, not data — so it defaults to
+/// `None` rather than failing the whole parse. Guards against someone "tightening" it into a
+/// required field, which would turn a CLI that stops emitting it into an outage.
+#[test]
+fn missing_session_id_defaults_to_none() {
+    let json = r#"{
+        "total_cost_usd": 0.01,
+        "usage": {"input_tokens": 1, "output_tokens": 2},
+        "modelUsage": {},
+        "result": "hi",
+        "is_error": false
+    }"#;
+
+    let outcome = parse_result(json).expect("an envelope without session_id must still parse");
+
+    assert_eq!(outcome.session_id, None);
+}
+
 /// Documents the success/error envelope difference, so the canary below can compare like with like.
 #[test]
 fn error_envelope_is_a_subset_of_the_success_envelope() {

@@ -45,6 +45,23 @@ pub enum Error {
         status: Option<u16>,
         /// Human-readable message from the envelope's `result` field.
         message: String,
+        /// The CLI session this failed call ran under, from the envelope's
+        /// `session_id` (see [`crate::parse::Outcome::session_id`]).
+        ///
+        /// Carried on the error path deliberately: this is the one failure mode where a real,
+        /// token-consuming session exists — the CLI ran, reached the API, and billed for the
+        /// attempt. `Spawn`/`BinaryNotFound`/`Timeout`/`Parse` have no envelope and so no id at
+        /// all. Dropping it would understate exactly the runs a cost comparison cares about most.
+        ///
+        /// `None` if the envelope carried no `session_id`.
+        session_id: Option<String>,
+        /// The envelope's `total_cost_usd`. Carried for the same reason as `session_id`: the CLI
+        /// reached the API and billed for this attempt, and the error envelope reports the charge
+        /// like any other. Often `0` (a model that does not exist never ran), but not always — an
+        /// overload or timeout after real work bills for that work.
+        cost_usd: f64,
+        /// The envelope's `usage` block. Same reasoning as `cost_usd`.
+        usage: crate::parse::Usage,
     },
 
     /// Setting up an isolated `CLAUDE_CONFIG_DIR` (temp dir creation, or a
