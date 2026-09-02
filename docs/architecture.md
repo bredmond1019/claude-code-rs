@@ -100,7 +100,9 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
   `CLAUDE_CONFIG_DIR` containing a `refreshToken`-redacted copy of `.credentials.json` (mode `0600`,
   sourced from the macOS Keychain then `~/.claude/.credentials.json` fallback) and an optional copy
   of `.claude.json`; removes the temp dir (including on mid-construction failure) on drop.
-  `IsolatedConfigDir::new()` uses the real credential sources; `with_sources(creds_json,
+  `IsolatedConfigDir::new()` uses the real credential sources (and is blocking — `execute()` calls
+  the `new_async()` wrapper, which runs it on tokio's blocking pool so the Keychain wait cannot park
+  a worker thread); `with_sources(creds_json,
   claude_json_src)` is an injectable constructor for tests. Re-exported from `lib.rs`.
 - **`Outcome`** (`src/parse.rs`) — parsed CLI result: `cost_usd` (from `total_cost_usd`), `usage`
   (`Usage`), `model_usage` (`BTreeMap<String, ModelUsage>`, from `modelUsage`), `text` (from

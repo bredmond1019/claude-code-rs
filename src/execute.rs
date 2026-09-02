@@ -76,8 +76,14 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
     // Built before the async block so a mid-setup failure surfaces before we
     // ever spawn, and so the guard's lifetime spans the whole call (including
     // the timeout race) below.
+    //
+    // `new_async` (not `new`) because construction shells out to the macOS
+    // Keychain and blocks: on `new` that wait runs on this task's own worker
+    // thread, so a call here stalls every *other* task on the runtime — a
+    // concurrent `execute()` has been observed hitting `Error::Timeout` from
+    // this starvation alone, without ever spawning its subprocess.
     let isolation_guard = if config.isolated {
-        Some(IsolatedConfigDir::new()?)
+        Some(IsolatedConfigDir::new_async().await?)
     } else {
         None
     };

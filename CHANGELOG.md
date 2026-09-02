@@ -2,6 +2,24 @@
 
 All notable changes to this crate are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Isolated calls no longer block a tokio worker thread.** `execute()` with `Config { isolated:
+  true }` built its `IsolatedConfigDir` synchronously, so the macOS Keychain lookup
+  (`security find-generic-password`) ran on the async task's own worker thread for its full
+  duration. Because `securityd` serializes concurrent keychain reads, two concurrent isolated
+  calls could starve the runtime — observed in `engine-rs` on 2026-09-02, where one call returned
+  `Error::Timeout` against a 120s budget without ever spawning its subprocess. The construction now
+  runs on tokio's blocking pool.
+
+### Added
+
+- `IsolatedConfigDir::new_async()` — async wrapper over the (blocking) `new()`, via
+  `tokio::task::spawn_blocking`. `execute()` uses it. `new()` is unchanged and still public; its
+  docs now say plainly that it blocks.
+
 ## 2.0.0 — 2026-08-24
 
 **This is a ground-up rewrite, not an incremental release. There is no migration path from 1.x.**

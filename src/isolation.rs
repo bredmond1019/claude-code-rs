@@ -41,13 +41,68 @@ impl IsolatedConfigDir {
     /// the file fallback `~/.claude/.credentials.json`. `.claude.json` is
     /// copied from `~/.claude.json` when present.
     ///
+    /// This is a **blocking** constructor: the Keychain lookup shells out to
+    /// `security` and waits for it. Never call it directly from an async task —
+    /// use [`IsolatedConfigDir::new_async`], which runs it on tokio's blocking
+    /// pool.
+    ///
     /// # Errors
     /// Returns [`Error::Isolation`] if the temp directory cannot be created or
     /// a source file exists but cannot be copied.
     pub fn new() -> Result<Self> {
-        let creds_json = read_keychain_credentials().or_else(read_file_credentials);
+        Self::new_with(read_keychain_credentials)
+    }
+
+    /// Async wrapper over [`IsolatedConfigDir::new`], run on tokio's blocking
+    /// thread pool via [`tokio::task::spawn_blocking`].
+    ///
+    /// `new()` shells out to the macOS Keychain (`security find-generic-password`)
+    /// and blocks for as long as that takes — and macOS's `securityd` serializes
+    /// concurrent keychain reads, so under concurrency that wait is not short.
+    /// Calling it directly from an async task parks a tokio *worker* thread for
+    /// the whole duration, starving every other task on that runtime; a
+    /// concurrent `execute()` call has been observed timing out for this reason
+    /// alone, having never spawned its own subprocess. This wrapper moves the
+    /// wait onto the blocking pool, where blocking is what the threads are for.
+    ///
+    /// Behavior is otherwise identical to [`IsolatedConfigDir::new`], including
+    /// the best-effort credential fallback chain.
+    ///
+    /// # Errors
+    /// The same [`Error::Isolation`] cases as [`IsolatedConfigDir::new`], plus
+    /// an [`Error::Isolation`] wrapping a [`tokio::task::JoinError`] if the
+    /// blocking task panicked or was cancelled.
+    pub async fn new_async() -> Result<Self> {
+        Self::spawn_blocking_build(Self::new).await
+    }
+
+    /// Shared constructor body, with the Keychain reader injected so tests can
+    /// substitute a deliberately slow one without touching the real Keychain.
+    fn new_with(read_keychain: impl FnOnce() -> Option<String>) -> Result<Self> {
+        let creds_json = read_keychain().or_else(read_file_credentials);
         let claude_json_src = home_dir().map(|home| home.join(".claude.json"));
         Self::build(None, creds_json, claude_json_src.as_deref())
+    }
+
+    /// Run a blocking construction on tokio's blocking pool, mapping a join
+    /// failure (panic/cancellation) into [`Error::Isolation`].
+    async fn spawn_blocking_build(
+        build: impl FnOnce() -> Result<Self> + Send + 'static,
+    ) -> Result<Self> {
+        tokio::task::spawn_blocking(build)
+            .await
+            .map_err(|e| Error::Isolation(io::Error::other(e)))?
+    }
+
+    /// Test-only async seam mirroring [`IsolatedConfigDir::new_async`] exactly,
+    /// but with the (real, slow, machine-dependent) Keychain reader replaced by
+    /// an injected one. Lets the concurrency tests below assert *where* the
+    /// blocking read runs without ever touching the real Keychain.
+    #[cfg(test)]
+    async fn new_async_with(
+        read_keychain: impl FnOnce() -> Option<String> + Send + 'static,
+    ) -> Result<Self> {
+        Self::spawn_blocking_build(move || Self::new_with(read_keychain)).await
     }
 
     /// Test/injection seam: build an isolated config dir from an explicit
@@ -188,6 +243,13 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    /// Stands in for a real macOS Keychain read under contention — `securityd`
+    /// serializes concurrent lookups, so this is a slow call, not a fast one.
+    /// Long enough that blocking a worker thread for it is unmistakable in the
+    /// tests below, short enough not to drag the suite.
+    const SLOW_KEYCHAIN_READ: Duration = Duration::from_millis(300);
 
     #[test]
     fn redacts_refresh_token_preserving_other_fields() {
@@ -294,6 +356,81 @@ mod tests {
         assert!(
             remaining.is_empty(),
             "partially-built temp dir should have been cleaned up, found: {remaining:?}"
+        );
+    }
+
+    /// The regression this whole change exists for: a slow Keychain read must
+    /// not park the runtime's worker thread.
+    ///
+    /// Runs on a single-threaded runtime — the strictest case, and the one that
+    /// makes the failure unambiguous: with the read on the worker thread there
+    /// is *no* other thread for the ticker task to run on, so it cannot advance
+    /// at all while the read is in flight. Before the fix this asserts 0 ticks;
+    /// with `spawn_blocking` the read moves off-worker and the ticker runs.
+    #[tokio::test]
+    async fn slow_keychain_read_does_not_block_the_runtime() {
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ticker_ticks = std::sync::Arc::clone(&ticks);
+
+        let ticker = tokio::spawn(async move {
+            for _ in 0..50 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                ticker_ticks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+
+        let guard = IsolatedConfigDir::new_async_with(|| {
+            std::thread::sleep(SLOW_KEYCHAIN_READ);
+            None
+        })
+        .await
+        .expect("build should succeed");
+
+        let observed = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        ticker.abort();
+        drop(guard);
+
+        assert!(
+            observed > 0,
+            "the async runtime made no progress while the keychain read ran \
+             ({observed} ticks) — the blocking read is still on a worker thread"
+        );
+    }
+
+    /// Concurrent isolated builds overlap rather than queueing end-to-end.
+    ///
+    /// Four slow reads dispatched at once should finish in roughly one read's
+    /// time, not four, because `spawn_blocking`'s pool has many threads.
+    /// `tokio::join!` polls all four before any of them can complete, so each
+    /// reaches its `spawn_blocking` dispatch first — awaiting them in sequence
+    /// instead would serialize them by construction and measure nothing. The
+    /// bound is deliberately loose (half the fully-serialized time) so a loaded
+    /// machine cannot flake it, while reads that actually serialize still fail.
+    #[tokio::test]
+    async fn concurrent_isolated_builds_overlap_instead_of_serializing() {
+        const N: u32 = 4;
+        fn slow_build() -> impl std::future::Future<Output = Result<IsolatedConfigDir>> {
+            IsolatedConfigDir::new_async_with(|| {
+                std::thread::sleep(SLOW_KEYCHAIN_READ);
+                None
+            })
+        }
+
+        let started = std::time::Instant::now();
+        let (a, b, c, d) = tokio::join!(slow_build(), slow_build(), slow_build(), slow_build());
+        let elapsed = started.elapsed();
+
+        for guard in [&a, &b, &c, &d] {
+            assert!(guard.is_ok(), "all concurrent builds should succeed");
+        }
+        drop((a, b, c, d));
+
+        let serialized = SLOW_KEYCHAIN_READ * N;
+        assert!(
+            elapsed < serialized / 2,
+            "{N} concurrent keychain reads took {elapsed:?}, close to the \
+             fully-serialized {serialized:?} — they are not running on the \
+             blocking pool concurrently"
         );
     }
 }

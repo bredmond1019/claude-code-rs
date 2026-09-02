@@ -99,6 +99,14 @@ single-use OAuth refresh token and silently revoke an interactive session's cred
 - **`IsolatedConfigDir::new() -> Result<Self>`** — real credential sources: the macOS Keychain
   first (best-effort, falls through on any failure), then `~/.claude/.credentials.json`;
   `.claude.json` is copied from `~/.claude.json` when present. Errors: `Error::Isolation`.
+  **Blocking** — the Keychain lookup shells out to `security` and waits for it. Do not call this
+  from an async task; use `new_async()`.
+- **`IsolatedConfigDir::new_async() -> Result<Self>`** (async) — what `execute()` calls. Identical
+  behavior to `new()`, run on tokio's blocking pool via `tokio::task::spawn_blocking`. macOS's
+  `securityd` serializes concurrent keychain reads, so on `new()` that wait parks a tokio *worker*
+  thread and stalls every other task on the runtime — a concurrent `execute()` has been observed
+  returning `Error::Timeout` from this starvation alone, without ever spawning its subprocess.
+  Additionally errors with `Error::Isolation` wrapping a `JoinError` if the blocking task panicked.
 - **`IsolatedConfigDir::with_sources(creds_json: Option<String>, claude_json_src: Option<&Path>) -> Result<Self>`**
   — injectable constructor for tests/DI, bypassing the Keychain and `~/.claude/` entirely.
 - **`IsolatedConfigDir::path(&self) -> &Path`** — absolute path to the temp `CLAUDE_CONFIG_DIR`.
