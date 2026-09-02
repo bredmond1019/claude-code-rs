@@ -39,6 +39,7 @@ doc is the authority.
 | Ask which model actually served the call | `Outcome::primary_model()` | [api.md](api.md#outcome) |
 | Parse a raw CLI JSON response you captured yourself | `parse::parse_result(json)` | [api.md](api.md#outcome) |
 | Stop a background call from logging out your interactive `claude` session | `Config { isolated: true }` / `IsolatedConfigDir` (`src/isolation.rs`) | [api.md](api.md#isolatedconfigdir) |
+| Build that isolated config dir yourself from an async context, without blocking a worker thread | `IsolatedConfigDir::new_async()` (`src/isolation.rs`) | [api.md](api.md#isolatedconfigdir) |
 | Tell apart a CLI failure from an API failure from a timeout | `Error` / `Result` (`src/error.rs`) | [architecture.md](architecture.md#core-types) |
 
 ## Reference docs

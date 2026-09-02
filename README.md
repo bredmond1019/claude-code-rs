@@ -115,6 +115,12 @@ and [`docs/architecture.md`](docs/architecture.md).
 with a file fallback. It has only been exercised on macOS; other platforms may need the
 file-based fallback path exclusively.
 
+**Concurrency note:** that Keychain lookup shells out to `security` and blocks, and macOS
+serializes concurrent keychain reads — so `execute()` runs the whole guard construction on tokio's
+blocking pool (`IsolatedConfigDir::new_async`) rather than on the calling task's worker thread.
+Concurrent isolated calls therefore do not starve each other or anything else on your runtime. If
+you build an `IsolatedConfigDir` yourself from async code, call `new_async()`, not `new()`.
+
 ## Errors
 
 `execute()` returns [`claude_sdk_rs::Error`](https://docs.rs/claude-sdk-rs/latest/claude_sdk_rs/enum.Error.html):

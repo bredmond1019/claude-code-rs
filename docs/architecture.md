@@ -48,7 +48,10 @@ In sentences, for the same thing:
 
 1. You build a [`Config`](api.md#config) describing one call.
 2. If `Config::isolated` is `true`, `execute()` builds an [`IsolatedConfigDir`](#core-types)
-   **before** spawning anything, so a credential problem surfaces without burning a call.
+   **before** spawning anything, so a credential problem surfaces without burning a call. That
+   build reads the macOS Keychain and blocks, so it runs on tokio's blocking pool
+   (`IsolatedConfigDir::new_async`) rather than on the calling task's worker thread — see
+   [Why the guard is built off-thread](#why-the-guard-is-built-off-thread).
 3. `execute()` resolves the `claude` binary, spawns it with `Config::build_args(prompt)`, and wraps
    the whole thing in a single timeout.
 4. An empty stdout means the CLI itself failed; a parsed envelope with `is_error: true` means the
@@ -73,7 +76,8 @@ src/
 
 `config`, `execute`, `parse`, and `isolation` are all implemented as their own files.
 `execute()` applies `Config::cwd`/`Config::env` and, when `Config::isolated` is `true`, builds an
-`IsolatedConfigDir` and sets `CLAUDE_CONFIG_DIR` for the child process (`CC.1.B`).
+`IsolatedConfigDir` (via `new_async`, on tokio's blocking pool) and sets `CLAUDE_CONFIG_DIR` for the
+child process (`CC.1.B`).
 
 ## Core Types
 
@@ -125,7 +129,8 @@ and exactly how the two failure modes are told apart.
 Caller builds a `Config` → `execute(&config, prompt)` resolves the `claude` binary (`CLAUDE_BINARY`
 env var, else `PATH` via `which`), applies `config.cwd` (`Command::current_dir`) and `config.env`
 (`Command::envs`, on top of the inherited environment); when `config.isolated` is `true`, builds an
-`IsolatedConfigDir` guard first (surfacing `Error::Isolation` before ever spawning the child) and sets
+`IsolatedConfigDir` guard first — via `IsolatedConfigDir::new_async`, on tokio's blocking pool —
+(surfacing `Error::Isolation` before ever spawning the child) and sets
 `CLAUDE_CONFIG_DIR` in the child env, keeping the guard alive until after the child's output is
 read — spawns it with `config.build_args(prompt)`, wraps the whole call in one
 `tokio::time::timeout` — `config.timeout` when set, else the built-in 300s default
@@ -133,6 +138,33 @@ read — spawns it with `config.build_args(prompt)`, wraps the whole call in one
 → CLI emits `--output-format json` → `parse::parse_result` extracts `total_cost_usd`, top-level
 `usage`, `modelUsage`, and `result` → `Outcome` returned to the caller. The default (non-isolated,
 no overrides) path is unchanged.
+
+## Why the guard is built off-thread
+
+Short version: building the isolated config dir shells out to the macOS Keychain and *waits*, and a
+wait on an async worker thread is not a wait — it is a stall for every other task on that runtime.
+
+`IsolatedConfigDir::new()` runs `security find-generic-password` through a synchronous
+`std::process::Command` and blocks until it returns. macOS's `securityd` serializes concurrent
+keychain reads, so under concurrency that wait is not short. Called directly from `execute()`, it
+would park the tokio **worker** thread that picked up the task — the thread that is supposed to be
+driving every other future on the runtime — for the whole duration. `execute()` therefore calls
+`IsolatedConfigDir::new_async()`, which wraps the construction in `tokio::task::spawn_blocking` so
+the wait lands on the blocking pool, where blocking is what the threads are for. Behavior is
+otherwise identical, including the best-effort `keychain → file → none` credential fallback; only
+the thread the wait runs on changed.
+
+This is not hypothetical. On 2026-09-02 two concurrent isolated calls from `engine-rs` (an
+SDLC_FLOW dispatch and an SDLC_TASK dispatch) made the second return `Error::Timeout` against a
+120s budget — starved by the first call's keychain read, having never spawned its own subprocess.
+
+**The subtlety worth keeping:** the guard is built *before* the `tokio::time::timeout` wrapper, not
+inside it. So a slow keychain read never consumed its **own** call's timeout budget — it consumed
+other tasks'. That is why the symptom appeared on an unrelated concurrent call rather than on the
+call doing the blocking, and it means any concurrent task could be the victim, not only another
+isolated call. Two tests in `src/isolation.rs` pin the fix: one asserts a concurrent task still
+makes progress during a slow read on a single-threaded runtime, the other that N concurrent builds
+overlap instead of serializing.
 
 Failure routing (two distinct modes, verified against CLI 2.1.211 — the exit code alone cannot
 distinguish them, since both exit non-zero):
