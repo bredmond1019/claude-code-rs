@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-09-01T00:37:51Z"
+timestamp: "2026-09-02T16:10:59Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,43 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-09-02 — Keychain read moved off the tokio worker thread (isolation)
+
+**What:** `execute()` with `Config { isolated: true }` built its `IsolatedConfigDir` synchronously
+(`execute.rs:79`), so `IsolatedConfigDir::new()`'s macOS Keychain lookup — a blocking
+`std::process::Command` shelling out to `security find-generic-password` — ran on the calling async
+task's own tokio **worker** thread for its full duration. Added `IsolatedConfigDir::new_async()`, a
+`tokio::task::spawn_blocking` wrapper over the existing `new()`, and pointed `execute()` at it.
+`new()` stays public and unchanged, now documented as blocking; a `JoinError` maps into the existing
+`Error::Isolation`. Credential fallback (`keychain → file → none`), errors and directory layout are
+untouched — only the thread the wait runs on moved. Commit `c8686e7`.
+
+Two tests in `src/isolation.rs`, both injecting a deliberately slow reader via a new `new_async_with`
+seam so the real Keychain is never touched: a concurrent ticker task must still advance during a read
+on a single-threaded runtime (the strict case — with the read on the worker there is no other thread
+for it to run on), and four concurrent builds must finish in under half their serialized time.
+**Positive control run:** reverting only the `spawn_blocking` line fails both and passes the other
+seven, so they test the fix rather than the weather. Docs parity updated in the same commit
+(`docs/api.md`, `docs/architecture.md`) per the standing `config-field-doc-parity-ungated` carryover.
+Full gate green: fmt, `clippy --all-features --all-targets -D warnings`, 52 tests, release build.
+
+**Why:** `engine-rs` hit it in production on 2026-09-02 — two concurrent `execute()` calls with
+`isolated: true` (an SDLC_FLOW dispatch and an SDLC_TASK dispatch) made the TASK call's
+`ImplementTaskNode` return `Error::Timeout` against the cheap-fast profile's 120s budget. macOS's
+`securityd` serializes concurrent keychain reads, so the first call's read held a worker thread long
+enough to starve the second. **One correction to the incoming diagnosis:** the guard is built
+*before* the `tokio::time::timeout` wrapper (`execute.rs:143`), not inside it, so the blocking read
+never consumed its **own** call's budget — it stole a worker thread from *other* tasks already inside
+their windows. That is precisely the observed shape, and it means the same starvation could surface
+on any concurrent task, not only another isolated call.
+
+**Also:** deleted the stale `planning/handoff.md` (dated 2026-08-06; every item in it had since
+landed — CC.2.C closed, the crate published 2026-08-24). Two `carryover[]` entries filed — see below.
+
+**Refs:** `src/isolation.rs`, `src/execute.rs`, `CHANGELOG.md` (Unreleased), commit `c8686e7`
 
 ---
 
