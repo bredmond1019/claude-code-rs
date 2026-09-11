@@ -67,6 +67,13 @@ pub struct Config {
     /// behavior unchanged).
     pub json_schema: Option<serde_json::Value>,
 
+    /// Optional ceiling on the number of agentic turns a single `claude`
+    /// invocation may take (`--max-turns <n>`). When `Some(n)`, `build_args`
+    /// emits `--max-turns` followed by `n`; when `None` (the default), the
+    /// flag is omitted entirely and the CLI's own default turn behavior
+    /// applies (today's unbounded-turn behavior unchanged).
+    pub max_turns: Option<u32>,
+
     /// Optional override for `execute()`'s whole-call timeout.
     ///
     /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
@@ -88,7 +95,7 @@ impl Config {
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
     /// `--resume <id>`, `--dangerously-skip-permissions`, `--json-schema <json>`,
-    /// then always `--output-format json`.
+    /// `--max-turns <n>`, then always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -137,6 +144,11 @@ impl Config {
         if let Some(json_schema) = &self.json_schema {
             args.push("--json-schema".to_string());
             args.push(json_schema.to_string());
+        }
+
+        if let Some(max_turns) = self.max_turns {
+            args.push("--max-turns".to_string());
+            args.push(max_turns.to_string());
         }
 
         args.push("--output-format".to_string());
@@ -226,5 +238,34 @@ mod tests {
         assert!(!config
             .build_args("hi")
             .contains(&"--json-schema".to_string()));
+    }
+
+    #[test]
+    fn default_max_turns_is_none() {
+        assert!(Config::default().max_turns.is_none());
+    }
+
+    #[test]
+    fn build_args_omits_max_turns_by_default() {
+        let config = Config::default();
+        assert!(!config.build_args("hi").contains(&"--max-turns".to_string()));
+    }
+
+    #[test]
+    fn build_args_emits_max_turns_when_set() {
+        let config = Config {
+            max_turns: Some(3),
+            ..Config::default()
+        };
+        let args = config.build_args("hi");
+
+        let count = args.iter().filter(|a| *a == "--max-turns").count();
+        assert_eq!(count, 1);
+
+        let idx = args
+            .iter()
+            .position(|a| a == "--max-turns")
+            .expect("--max-turns must be present");
+        assert_eq!(args[idx + 1], "3");
     }
 }
