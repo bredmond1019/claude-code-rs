@@ -77,6 +77,7 @@ never appear in argv.
 | `isolated: bool` | when `true`, `execute()` runs the subprocess under a temp `CLAUDE_CONFIG_DIR` built by `IsolatedConfigDir` (see below); not a CLI flag; default `false` |
 | `dangerously_skip_permissions: bool` | `--dangerously-skip-permissions` — appended only when `true`; omitted entirely at the `false` default, so existing callers are unaffected. Grants no tool a wider reach than the CLI's own tool definitions allow; scoping the blast radius (e.g. via `cwd` plus `disallowed_tools`) is the caller's responsibility |
 | `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
+| `max_turns: Option<u32>` | `--max-turns <n>` — emitted only when `Some`; omitted entirely when `None` (default) |
 | `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
 
 `Config::build_args(&self, prompt: &str) -> Vec<String>` builds the exact argv: `-p <prompt>`, then

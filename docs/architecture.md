@@ -94,9 +94,10 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
 - **`Config`** (`src/config.rs`) — CLI invocation config: `system_prompt`, `append_system_prompt`,
   `model`, `allowed_tools`/`disallowed_tools`, `continue_session`/`resume`, plus `cwd`/`env` overrides
   (now applied by `execute()` via `Command::current_dir`/`Command::envs`) and the opt-in `isolated: bool`
-  switch (default `false`) that routes the call through `IsolatedConfigDir`. Three further opt-ins, all
+  switch (default `false`) that routes the call through `IsolatedConfigDir`. Four further opt-ins, all
   inert at their defaults: `dangerously_skip_permissions: bool` (appends
-  `--dangerously-skip-permissions`), `json_schema: Option<serde_json::Value>` (`--json-schema`), and
+  `--dangerously-skip-permissions`), `json_schema: Option<serde_json::Value>` (`--json-schema`),
+  `max_turns: Option<u32>` (`--max-turns <n>`, emitted only when `Some`), and
   `timeout: Option<Duration>` (Rust-side only, never argv). `build_args(prompt)`
   builds the exact argv (always appending `--output-format json`). Re-exported from `lib.rs`.
   Full field-by-field table: [`api.md`](api.md).
