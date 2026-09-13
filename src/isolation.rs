@@ -16,6 +16,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tempfile::TempDir;
 
@@ -24,6 +25,25 @@ use crate::error::{Error, Result};
 /// macOS Keychain service name under which the `claude` CLI stores OAuth
 /// credentials when `CLAUDE_CONFIG_DIR` is unset.
 const KEYCHAIN_SERVICE_NAME: &str = "Claude Code-credentials";
+
+/// How many times to re-read a credential source that is present but
+/// carries no usable access token before giving up.
+///
+/// Observed live: a concurrent `claude` CLI OAuth refresh can momentarily
+/// leave both the Keychain and the `~/.claude/.credentials.json` fallback
+/// holding a placeholder blob (`accessToken: ""`, `expiresAt: 0`) rather
+/// than the real, valid one — parseable JSON, present OAuth object, empty
+/// token. Accepting that blob at face value silently ships an isolated
+/// subprocess a credential that Anthropic's API will reject, surfacing as a
+/// confusing remote "not logged in" several layers away from the real,
+/// local, transient cause. Retrying the *read* (not the whole subprocess
+/// call) closes the window without spending the caller's own transport
+/// retry budget on what is actually a local timing issue.
+const CREDENTIAL_READ_RETRY_ATTEMPTS: u32 = 4;
+
+/// Delay between credential-read retries. Chosen empirically to be long
+/// enough that a self-healing refresh has settled by the next attempt.
+const CREDENTIAL_READ_RETRY_DELAY: Duration = Duration::from_millis(150);
 
 /// RAII guard for a temp directory laid out like `~/.claude/`, suitable for
 /// pointing an isolated subprocess at via `CLAUDE_CONFIG_DIR`.
@@ -50,7 +70,7 @@ impl IsolatedConfigDir {
     /// Returns [`Error::Isolation`] if the temp directory cannot be created or
     /// a source file exists but cannot be copied.
     pub fn new() -> Result<Self> {
-        Self::new_with(read_keychain_credentials)
+        Self::new_with(read_keychain_credentials, read_file_credentials)
     }
 
     /// Async wrapper over [`IsolatedConfigDir::new`], run on tokio's blocking
@@ -76,10 +96,19 @@ impl IsolatedConfigDir {
         Self::spawn_blocking_build(Self::new).await
     }
 
-    /// Shared constructor body, with the Keychain reader injected so tests can
-    /// substitute a deliberately slow one without touching the real Keychain.
-    fn new_with(read_keychain: impl FnOnce() -> Option<String>) -> Result<Self> {
-        let creds_json = read_keychain().or_else(read_file_credentials);
+    /// Shared constructor body, with both credential readers injected so
+    /// tests can substitute deliberately slow or deliberately-empty ones
+    /// without touching the real Keychain or `~/.claude/.credentials.json`.
+    ///
+    /// # Errors
+    /// Returns [`Error::Isolation`] if a source is present but never yields
+    /// a usable access token within [`CREDENTIAL_READ_RETRY_ATTEMPTS`] —
+    /// see [`read_credentials_with_retry`].
+    fn new_with(
+        read_keychain: impl Fn() -> Option<String>,
+        read_file: impl Fn() -> Option<String>,
+    ) -> Result<Self> {
+        let creds_json = read_credentials_with_retry(&read_keychain, &read_file)?;
         let claude_json_src = home_dir().map(|home| home.join(".claude.json"));
         Self::build(None, creds_json, claude_json_src.as_deref())
     }
@@ -100,9 +129,10 @@ impl IsolatedConfigDir {
     /// blocking read runs without ever touching the real Keychain.
     #[cfg(test)]
     async fn new_async_with(
-        read_keychain: impl FnOnce() -> Option<String> + Send + 'static,
+        read_keychain: impl Fn() -> Option<String> + Send + 'static,
+        read_file: impl Fn() -> Option<String> + Send + 'static,
     ) -> Result<Self> {
-        Self::spawn_blocking_build(move || Self::new_with(read_keychain)).await
+        Self::spawn_blocking_build(move || Self::new_with(read_keychain, read_file)).await
     }
 
     /// Test/injection seam: build an isolated config dir from an explicit
@@ -234,6 +264,94 @@ fn read_keychain_credentials() -> Option<String> {
 fn read_file_credentials() -> Option<String> {
     let path = home_dir()?.join(".claude").join(".credentials.json");
     std::fs::read_to_string(path).ok()
+}
+
+/// Outcome of probing one credential source.
+enum Probe {
+    /// The source produced nothing — not configured, or genuinely
+    /// unreachable. Never retried: there is no reason to expect the next
+    /// call to differ.
+    Absent,
+    /// The source produced JSON with no usable `claudeAiOauth.accessToken`
+    /// — the transient placeholder shape a concurrent refresh can leave
+    /// behind. Worth retrying.
+    Invalid(String),
+    /// A real, usable OAuth blob.
+    Valid(String),
+}
+
+/// True iff `json` parses and its `claudeAiOauth.accessToken` is a
+/// non-empty string. Unparseable JSON and a missing/empty token are both
+/// "not usable" — the redaction step further down handles unparseable JSON
+/// by writing it through as-is (mirroring the Python reference), which is
+/// orthogonal to this check.
+fn has_usable_access_token(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| {
+            v.get("claudeAiOauth")?
+                .get("accessToken")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .is_some_and(|token| !token.is_empty())
+}
+
+fn probe(raw: Option<String>) -> Probe {
+    match raw {
+        None => Probe::Absent,
+        Some(json) if has_usable_access_token(&json) => Probe::Valid(json),
+        Some(json) => Probe::Invalid(json),
+    }
+}
+
+/// One round of the existing Keychain-then-file fallback, but distinguishing
+/// "no source at all" (proceed with no credentials — a legitimate,
+/// unretried case) from "a source exists but is transiently unusable"
+/// (worth retrying).
+fn probe_round(
+    read_keychain: &impl Fn() -> Option<String>,
+    read_file: &impl Fn() -> Option<String>,
+) -> Probe {
+    match probe(read_keychain()) {
+        Probe::Valid(json) => Probe::Valid(json),
+        Probe::Absent => probe(read_file()),
+        Probe::Invalid(keychain_json) => match probe(read_file()) {
+            Probe::Valid(json) => Probe::Valid(json),
+            _ => Probe::Invalid(keychain_json),
+        },
+    }
+}
+
+/// Read OAuth credentials via the Keychain-then-file fallback, retrying a
+/// bounded number of times when a source is present but transiently
+/// unusable (see [`CREDENTIAL_READ_RETRY_ATTEMPTS`]).
+///
+/// # Errors
+/// Returns [`Error::Isolation`] if every attempt found a source present but
+/// never usable. `Ok(None)` is the distinct, legitimate "no credentials
+/// configured anywhere" case — never retried, never an error.
+fn read_credentials_with_retry(
+    read_keychain: &impl Fn() -> Option<String>,
+    read_file: &impl Fn() -> Option<String>,
+) -> Result<Option<String>> {
+    for attempt in 0..CREDENTIAL_READ_RETRY_ATTEMPTS {
+        match probe_round(read_keychain, read_file) {
+            Probe::Valid(json) => return Ok(Some(json)),
+            Probe::Absent => return Ok(None),
+            Probe::Invalid(_) if attempt + 1 < CREDENTIAL_READ_RETRY_ATTEMPTS => {
+                std::thread::sleep(CREDENTIAL_READ_RETRY_DELAY);
+            }
+            Probe::Invalid(_) => {}
+        }
+    }
+
+    Err(Error::Isolation(io::Error::other(format!(
+        "OAuth credentials source present but had no usable access token after \
+         {CREDENTIAL_READ_RETRY_ATTEMPTS} attempts over {:?} — likely a concurrent \
+         token refresh; retry once it settles",
+        CREDENTIAL_READ_RETRY_DELAY * (CREDENTIAL_READ_RETRY_ATTEMPTS - 1)
+    ))))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -379,10 +497,13 @@ mod tests {
             }
         });
 
-        let guard = IsolatedConfigDir::new_async_with(|| {
-            std::thread::sleep(SLOW_KEYCHAIN_READ);
-            None
-        })
+        let guard = IsolatedConfigDir::new_async_with(
+            || {
+                std::thread::sleep(SLOW_KEYCHAIN_READ);
+                None
+            },
+            read_file_credentials,
+        )
         .await
         .expect("build should succeed");
 
@@ -410,10 +531,13 @@ mod tests {
     async fn concurrent_isolated_builds_overlap_instead_of_serializing() {
         const N: u32 = 4;
         fn slow_build() -> impl std::future::Future<Output = Result<IsolatedConfigDir>> {
-            IsolatedConfigDir::new_async_with(|| {
-                std::thread::sleep(SLOW_KEYCHAIN_READ);
-                None
-            })
+            IsolatedConfigDir::new_async_with(
+                || {
+                    std::thread::sleep(SLOW_KEYCHAIN_READ);
+                    None
+                },
+                read_file_credentials,
+            )
         }
 
         let started = std::time::Instant::now();
@@ -431,6 +555,141 @@ mod tests {
             "{N} concurrent keychain reads took {elapsed:?}, close to the \
              fully-serialized {serialized:?} — they are not running on the \
              blocking pool concurrently"
+        );
+    }
+
+    const EMPTY_TOKEN_BLOB: &str =
+        r#"{"claudeAiOauth":{"accessToken":"","expiresAt":0,"subscriptionType":"max"}}"#;
+    const VALID_BLOB: &str =
+        r#"{"claudeAiOauth":{"accessToken":"sk-ant-real","expiresAt":9999999999999}}"#;
+
+    #[test]
+    fn usable_access_token_requires_a_non_empty_string() {
+        assert!(has_usable_access_token(VALID_BLOB));
+        assert!(!has_usable_access_token(EMPTY_TOKEN_BLOB));
+        assert!(!has_usable_access_token(r#"{"claudeAiOauth":{}}"#));
+        assert!(!has_usable_access_token("not json"));
+    }
+
+    #[test]
+    fn no_source_at_all_returns_ok_none_without_retrying() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let keychain_calls = std::sync::Arc::clone(&calls);
+
+        let result = read_credentials_with_retry(
+            &move || {
+                keychain_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                None
+            },
+            &|| None,
+        );
+
+        assert!(matches!(result, Ok(None)));
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "an absent source on both sides should not be retried"
+        );
+    }
+
+    #[test]
+    fn transiently_empty_token_self_heals_before_exhausting_attempts() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let keychain_calls = std::sync::Arc::clone(&calls);
+
+        // Empty for the first two rounds, real on the third — well within
+        // CREDENTIAL_READ_RETRY_ATTEMPTS.
+        let result = read_credentials_with_retry(
+            &move || {
+                let n = keychain_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Some(if n < 2 {
+                    EMPTY_TOKEN_BLOB.to_string()
+                } else {
+                    VALID_BLOB.to_string()
+                })
+            },
+            &|| None,
+        );
+
+        assert_eq!(
+            result.expect("should recover"),
+            Some(VALID_BLOB.to_string())
+        );
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "should stop retrying as soon as a usable token appears"
+        );
+    }
+
+    #[test]
+    fn file_fallback_wins_immediately_when_keychain_is_invalid() {
+        let result = read_credentials_with_retry(&|| Some(EMPTY_TOKEN_BLOB.to_string()), &|| {
+            Some(VALID_BLOB.to_string())
+        });
+
+        assert_eq!(
+            result.expect("should use the file"),
+            Some(VALID_BLOB.to_string())
+        );
+    }
+
+    #[test]
+    fn persistently_empty_token_errors_after_exhausting_attempts() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let keychain_calls = std::sync::Arc::clone(&calls);
+
+        let result = read_credentials_with_retry(
+            &move || {
+                keychain_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Some(EMPTY_TOKEN_BLOB.to_string())
+            },
+            &|| None,
+        );
+
+        assert!(
+            result.is_err(),
+            "should surface a diagnosable error, not silently proceed"
+        );
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            CREDENTIAL_READ_RETRY_ATTEMPTS as usize,
+            "should have made exactly the bounded number of attempts"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_recovers_through_new_with_when_source_self_heals() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let keychain_calls = std::sync::Arc::clone(&calls);
+
+        let guard = IsolatedConfigDir::new_async_with(
+            move || {
+                let n = keychain_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Some(if n == 0 {
+                    EMPTY_TOKEN_BLOB.to_string()
+                } else {
+                    VALID_BLOB.to_string()
+                })
+            },
+            || None,
+        )
+        .await
+        .expect("build should recover once the source self-heals");
+
+        let written = std::fs::read_to_string(guard.path().join(".credentials.json"))
+            .expect("credentials file should exist");
+        assert!(written.contains("sk-ant-real"));
+    }
+
+    #[tokio::test]
+    async fn build_fails_clearly_when_source_never_recovers() {
+        let result =
+            IsolatedConfigDir::new_async_with(|| Some(EMPTY_TOKEN_BLOB.to_string()), || None).await;
+
+        assert!(
+            result.is_err(),
+            "a persistently-empty credential source should fail the build, not write junk"
         );
     }
 }
