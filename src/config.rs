@@ -49,6 +49,17 @@ pub struct Config {
     /// unchanged.
     pub isolated: bool,
 
+    /// Opt-in: when a `config.isolated` call fails with the exact shape of an
+    /// expired/invalid isolated credential snapshot (see
+    /// `heal::is_isolated_auth_expired`), `execute()` attempts a best-effort
+    /// heal of the real shared credentials and retries exactly once through a
+    /// fresh `IsolatedConfigDir`.
+    ///
+    /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
+    /// output. Defaults to `false`, preserving today's hard-fail behavior for
+    /// every caller that does not opt in.
+    pub heal_isolated_auth_on_expiry: bool,
+
     /// When `true`, appends `--dangerously-skip-permissions` so the spawned
     /// session never blocks on an interactive tool-use approval prompt —
     /// required for any headless (`-p`) run that needs to actually use a
@@ -100,6 +111,15 @@ pub struct Config {
     /// — useful for long-running agentic work (multi-file writes, cold
     /// worktrees) that legitimately exceeds five minutes.
     pub timeout: Option<Duration>,
+
+    /// Optional override for the whole-call timeout applied to the best-effort
+    /// shared-credential heal triggered by [`Config::heal_isolated_auth_on_expiry`].
+    ///
+    /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
+    /// output. `None` (the `#[derive(Default)]` value) uses the built-in
+    /// `DEFAULT_HEAL_TIMEOUT` (15 seconds); `Some(duration)` overrides it.
+    /// Mirrors [`Config::timeout`]'s `None`-means-built-in-default shape.
+    pub heal_timeout: Option<Duration>,
 }
 
 impl Config {
@@ -314,6 +334,28 @@ mod tests {
             .position(|a| a == "--setting-sources=")
             .expect("--setting-sources= must be present");
         assert_eq!(args[idx + 1], "--output-format");
+    }
+
+    #[test]
+    fn heal_isolated_auth_on_expiry_defaults_to_false_and_heal_timeout_to_none() {
+        let config = Config::default();
+        assert!(!config.heal_isolated_auth_on_expiry);
+        assert!(config.heal_timeout.is_none());
+    }
+
+    #[test]
+    fn heal_fields_never_appear_in_build_args() {
+        let config = Config {
+            heal_isolated_auth_on_expiry: true,
+            heal_timeout: Some(Duration::from_secs(5)),
+            ..Config::default()
+        };
+        let args = config.build_args("hi");
+        let default_args = Config::default().build_args("hi");
+        assert_eq!(
+            args, default_args,
+            "heal_isolated_auth_on_expiry and heal_timeout must never affect build_args output"
+        );
     }
 
     #[test]
