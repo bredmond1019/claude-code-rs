@@ -16,6 +16,21 @@ related: [status, context]
 
 ---
 
+## 2026-09-13 — `Config::setting_sources` (runs-that-finish-cheaply Wave 0)
+
+- **What:** new `setting_sources: Option<Vec<String>>` on `Config`, emitted as a single
+  `--setting-sources=<list>` token, with three unit tests: omitted by default, empty emits
+  `--setting-sources=` followed directly by `--output-format`, and a list is comma-joined.
+- **Why:** the engine token analysis measured `--setting-sources=` cutting a `claude -p` call's
+  first-turn context from 48.5K to 21.4K tokens. The separate-argument form was measured to
+  swallow the next flag as its value, hence one token. Prerequisite of
+  `engine-rs:EN.ticket.context-profile-ab`.
+- **Gates:** `cargo fmt --check` clean, `cargo clippy --all-features --all-targets -D warnings`
+  clean, `cargo nextest run` 65 passed / 4 skipped.
+- **Refs:** HQ `planning/roadmaps/runs-that-finish-cheaply/roadmap.md` § Wave 0 item 4.
+
+---
+
 ## 2026-09-02 — Keychain read moved off the tokio worker thread (isolation)
 
 **What:** `execute()` with `Config { isolated: true }` built its `IsolatedConfigDir` synchronously

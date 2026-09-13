@@ -74,6 +74,19 @@ pub struct Config {
     /// applies (today's unbounded-turn behavior unchanged).
     pub max_turns: Option<u32>,
 
+    /// Optional list of setting sources the CLI loads (`--setting-sources=<list>`).
+    ///
+    /// Controls which settings layers (`user`, `project`, `local`) a call loads,
+    /// and with them the CLAUDE.md/AGENTS.md chain and project hooks.
+    /// `None` (the default) omits the flag, so every existing caller's behavior
+    /// is unchanged. `Some(vec![])` emits `--setting-sources=` (load none): a
+    /// measured first-turn context of ~21K tokens against ~48K by default in
+    /// this fleet. `Some(sources)` emits them comma-joined.
+    ///
+    /// Always emitted as a single `--setting-sources=<value>` token. A separate
+    /// empty argument makes the CLI read the NEXT flag as the value.
+    pub setting_sources: Option<Vec<String>>,
+
     /// Optional override for `execute()`'s whole-call timeout.
     ///
     /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
@@ -95,7 +108,7 @@ impl Config {
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
     /// `--resume <id>`, `--dangerously-skip-permissions`, `--json-schema <json>`,
-    /// `--max-turns <n>`, then always `--output-format json`.
+    /// `--max-turns <n>`, `--setting-sources=<list>`, then always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -149,6 +162,10 @@ impl Config {
         if let Some(max_turns) = self.max_turns {
             args.push("--max-turns".to_string());
             args.push(max_turns.to_string());
+        }
+
+        if let Some(setting_sources) = &self.setting_sources {
+            args.push(format!("--setting-sources={}", setting_sources.join(",")));
         }
 
         args.push("--output-format".to_string());
@@ -267,5 +284,46 @@ mod tests {
             .position(|a| a == "--max-turns")
             .expect("--max-turns must be present");
         assert_eq!(args[idx + 1], "3");
+    }
+
+    #[test]
+    fn build_args_omits_setting_sources_by_default() {
+        let config = Config::default();
+        assert!(config.setting_sources.is_none());
+        assert!(!config
+            .build_args("hi")
+            .iter()
+            .any(|a| a.starts_with("--setting-sources")));
+    }
+
+    #[test]
+    fn build_args_emits_empty_setting_sources_as_one_token() {
+        let config = Config {
+            setting_sources: Some(Vec::new()),
+            ..Config::default()
+        };
+        let args = config.build_args("hi");
+
+        let matches: Vec<&String> = args
+            .iter()
+            .filter(|a| a.starts_with("--setting-sources"))
+            .collect();
+        assert_eq!(matches, vec!["--setting-sources="]);
+        let idx = args
+            .iter()
+            .position(|a| a == "--setting-sources=")
+            .expect("--setting-sources= must be present");
+        assert_eq!(args[idx + 1], "--output-format");
+    }
+
+    #[test]
+    fn build_args_joins_setting_sources_with_commas() {
+        let config = Config {
+            setting_sources: Some(vec!["user".to_string(), "project".to_string()]),
+            ..Config::default()
+        };
+        assert!(config
+            .build_args("hi")
+            .contains(&"--setting-sources=user,project".to_string()));
     }
 }

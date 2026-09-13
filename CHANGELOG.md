@@ -16,6 +16,11 @@ All notable changes to this crate are documented here.
 
 ### Added
 
+- `Config::setting_sources: Option<Vec<String>>`: emits `--setting-sources=<comma-joined>` as one
+  token. `Some(vec![])` loads no settings layers and so no CLAUDE.md/AGENTS.md chain, measured as
+  ~21K first-turn context tokens against ~48K by default. `None` omits the flag (unchanged
+  behaviour). Adding a public field is source-breaking for callers that build `Config` with a full
+  struct literal and no `..Default::default()`; every in-fleet caller uses the default spread.
 - `IsolatedConfigDir::new_async()` — async wrapper over the (blocking) `new()`, via
   `tokio::task::spawn_blocking`. `execute()` uses it. `new()` is unchanged and still public; its
   docs now say plainly that it blocks.
