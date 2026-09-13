@@ -848,4 +848,96 @@ mod tests {
         assert!(outcome.cost_usd >= 0.0);
         assert!(!outcome.is_error);
     }
+
+    /// Resolve the real shared credentials file path — the same
+    /// `~/.claude/.credentials.json` resolution `isolation.rs`'s private
+    /// `home_dir()`/`read_file_credentials()` use — so this test never
+    /// hardcodes a second, independent path to the same file.
+    fn shared_credentials_path() -> PathBuf {
+        let home = std::env::var_os("HOME").expect("HOME must be set to locate credentials");
+        PathBuf::from(home)
+            .join(".claude")
+            .join(".credentials.json")
+    }
+
+    /// Unconditionally restores the shared credentials file to its original
+    /// bytes when dropped — including during a panic/assertion-failure
+    /// unwind, since `Drop::drop` still runs while unwinding (Rust only skips
+    /// it on abort, which this test never triggers). This is what makes it
+    /// safe to corrupt a real, live credential file in-process.
+    struct CredentialsRestoreGuard {
+        path: PathBuf,
+        original_bytes: Vec<u8>,
+    }
+
+    impl Drop for CredentialsRestoreGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::write(&self.path, &self.original_bytes);
+        }
+    }
+
+    /// Live smoke test proving the heal-and-retry mechanism against the real
+    /// `claude` binary and the real shared credentials file: corrupts the
+    /// live `accessToken`, runs an isolated `execute()` call with healing
+    /// opted in, and asserts both that the call recovered and that the
+    /// shared file's `accessToken` is no longer the corrupted value.
+    ///
+    /// Ignored so gated `cargo test` stays green (mirrors
+    /// `live_execute_returns_populated_outcome`'s convention exactly) — run
+    /// manually with:
+    /// `cargo test -- --ignored live_heal_recovers_isolated_call_after_real_credential_corruption`
+    /// on a machine with a real subscription login. Never touches
+    /// `CLAUDE_BINARY` or any other override — it exercises the real `claude`
+    /// resolution path end to end, on purpose.
+    #[tokio::test]
+    #[ignore]
+    async fn live_heal_recovers_isolated_call_after_real_credential_corruption() {
+        let creds_path = shared_credentials_path();
+        let original_bytes = std::fs::read(&creds_path)
+            .expect("real shared credentials file must exist on this machine");
+
+        // Installed before any mutation, so a panic anywhere below (including
+        // from the assertions at the end of this test) still restores the
+        // original bytes on unwind.
+        let _restore_guard = CredentialsRestoreGuard {
+            path: creds_path.clone(),
+            original_bytes: original_bytes.clone(),
+        };
+
+        let original_text =
+            String::from_utf8(original_bytes.clone()).expect("credentials file must be UTF-8");
+        let mut creds_value: serde_json::Value =
+            serde_json::from_str(&original_text).expect("credentials file must be valid JSON");
+        let corrupted_access_token = "sk-ant-deliberately-corrupted-by-live-heal-test";
+        creds_value["claudeAiOauth"]["accessToken"] =
+            serde_json::Value::String(corrupted_access_token.to_string());
+        std::fs::write(
+            &creds_path,
+            serde_json::to_string(&creds_value).expect("corrupted credentials must serialize"),
+        )
+        .expect("failed to write corrupted credentials for live heal test");
+
+        let config = Config {
+            isolated: true,
+            heal_isolated_auth_on_expiry: true,
+            ..Config::default()
+        };
+
+        let outcome = execute(&config, "Say hello in one word.")
+            .await
+            .expect("heal-and-retry should recover the isolated call");
+        assert!(!outcome.is_error);
+
+        let healed_text = std::fs::read_to_string(&creds_path)
+            .expect("shared credentials file must still exist after the live call");
+        let healed_value: serde_json::Value = serde_json::from_str(&healed_text)
+            .expect("healed credentials must still be valid JSON");
+        assert_ne!(
+            healed_value["claudeAiOauth"]["accessToken"],
+            serde_json::Value::String(corrupted_access_token.to_string()),
+            "the shared file's accessToken must no longer be the corrupted value after healing"
+        );
+
+        // `_restore_guard` drops here, restoring the original bytes.
+    }
 }
