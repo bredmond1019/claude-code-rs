@@ -1,6 +1,7 @@
 //! Lean async Rust SDK that runs the `claude` CLI as a subprocess on a flat-rate subscription.
 
 mod error;
+mod heal;
 
 pub mod config;
 pub mod execute;

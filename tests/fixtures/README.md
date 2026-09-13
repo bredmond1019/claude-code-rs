@@ -17,6 +17,7 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 | `cli-result-2.1.211.json` | `claude` 2.1.211, 2026-07-16 | success (`is_error: false`) |
 | `cli-error-2.1.211.json` | `claude` 2.1.211, 2026-07-16 | API error (`is_error: true`, HTTP 404) |
 | `cli-structured-2.1.214.json` | `claude` 2.1.214, 2026-07-18 | success with `--json-schema` (envelope: structured output) |
+| `cli-error-oauth-expired-2.1.270.json` | `claude` 2.1.270, 2026-09-13 | API error (`is_error: true`, HTTP 401, isolated call against a corrupted access token) |
 
 The filename carries the CLI version. **That is the version record** — this crate deliberately has
 no contract doc, changelog, or semver for the CLI schema: the other party is a vendor who never
