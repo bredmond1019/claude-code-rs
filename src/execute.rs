@@ -6,7 +6,7 @@
 //! no per-line hardcoded timeout — and the child is killed on drop so a timed-out
 //! or cancelled call never leaks a subprocess.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use tokio::process::Command;
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::heal;
 use crate::isolation::IsolatedConfigDir;
 use crate::parse::{self, Outcome};
 
@@ -43,25 +44,17 @@ fn resolve_binary() -> Result<PathBuf> {
     which::which("claude").map_err(|_| Error::BinaryNotFound)
 }
 
-/// Run a single `claude` CLI call and parse its JSON output into an [`Outcome`].
+/// Spawn `binary` once with `args`, apply `config`'s `cwd`/`env` overrides and
+/// `config_dir` (the isolated guard's path, when isolated; `None` on the
+/// default, non-isolated path), and parse its output into an [`Outcome`] —
+/// wrapped in one [`tokio::time::timeout`] of [`effective_timeout`]`(config)`.
 ///
-/// Spawns `claude` (env inherited from the current process, since auth is free on
-/// the subscription, plus any `config.env` overrides and `config.cwd`) with the
-/// argv built from `config` and `prompt`, captures stdout, and wraps the whole
-/// call in one [`tokio::time::timeout`] of [`effective_timeout`]`(config)` —
-/// `config.timeout` when set, else [`DEFAULT_TIMEOUT`] (300s).
-///
-/// When `config.isolated` is `true`, an [`IsolatedConfigDir`] is built first and
-/// its path is set as `CLAUDE_CONFIG_DIR` in the child's env, so the subprocess
-/// runs against a throwaway, redacted copy of the credentials instead of the
-/// real `~/.claude/`. The guard is kept alive until the child has exited and its
-/// output has been read, so its `Drop` cleanup cannot race the still-running
-/// child.
+/// Behavior-identical to `execute()`'s inline body before this function was
+/// extracted from it — this is a pure extraction, not a behavior change — so
+/// both the first attempt and the heal-and-retry attempt in `execute()` share
+/// one code path instead of two copies.
 ///
 /// # Errors
-/// - [`Error::BinaryNotFound`] if the `claude` binary cannot be resolved.
-/// - [`Error::Isolation`] if `config.isolated` is set and the isolated config
-///   dir cannot be built.
 /// - [`Error::Spawn`] if the process fails to spawn or its output cannot be read.
 /// - [`Error::Timeout`] if the call does not complete within the timeout.
 /// - [`Error::Cli`] if the CLI produced no output envelope at all (bad argv, missing
@@ -69,29 +62,16 @@ fn resolve_binary() -> Result<PathBuf> {
 /// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
-pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
-    let binary = resolve_binary()?;
-    let args = config.build_args(prompt);
-
-    // Built before the async block so a mid-setup failure surfaces before we
-    // ever spawn, and so the guard's lifetime spans the whole call (including
-    // the timeout race) below.
-    //
-    // `new_async` (not `new`) because construction shells out to the macOS
-    // Keychain and blocks: on `new` that wait runs on this task's own worker
-    // thread, so a call here stalls every *other* task on the runtime — a
-    // concurrent `execute()` has been observed hitting `Error::Timeout` from
-    // this starvation alone, without ever spawning its subprocess.
-    let isolation_guard = if config.isolated {
-        Some(IsolatedConfigDir::new_async().await?)
-    } else {
-        None
-    };
-
+async fn run_once(
+    binary: &Path,
+    args: &[String],
+    config: &Config,
+    config_dir: Option<&Path>,
+) -> Result<Outcome> {
     let call = async {
-        let mut command = Command::new(&binary);
+        let mut command = Command::new(binary);
         command
-            .args(&args)
+            .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
@@ -104,8 +84,8 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
             command.envs(config.env.iter().map(|(k, v)| (k, v)));
         }
 
-        if let Some(guard) = &isolation_guard {
-            command.env("CLAUDE_CONFIG_DIR", guard.path());
+        if let Some(dir) = config_dir {
+            command.env("CLAUDE_CONFIG_DIR", dir);
         }
 
         let output = command.output().await.map_err(Error::Spawn)?;
@@ -146,17 +126,104 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
         Ok(outcome)
     };
 
-    let result = match tokio::time::timeout(effective_timeout(config), call).await {
+    match tokio::time::timeout(effective_timeout(config), call).await {
         Ok(result) => result,
         Err(_elapsed) => Err(Error::Timeout),
+    }
+}
+
+/// Run a single `claude` CLI call and parse its JSON output into an [`Outcome`].
+///
+/// Spawns `claude` (env inherited from the current process, since auth is free on
+/// the subscription, plus any `config.env` overrides and `config.cwd`) with the
+/// argv built from `config` and `prompt`, captures stdout, and wraps the whole
+/// call in one [`tokio::time::timeout`] of [`effective_timeout`]`(config)` —
+/// `config.timeout` when set, else [`DEFAULT_TIMEOUT`] (300s).
+///
+/// When `config.isolated` is `true`, an [`IsolatedConfigDir`] is built first and
+/// its path is set as `CLAUDE_CONFIG_DIR` in the child's env, so the subprocess
+/// runs against a throwaway, redacted copy of the credentials instead of the
+/// real `~/.claude/`. The guard is kept alive until the child has exited and its
+/// output has been read, so its `Drop` cleanup cannot race the still-running
+/// child.
+///
+/// When that first attempt fails with the exact shape of an expired/invalid
+/// isolated credential snapshot ([`heal::is_isolated_auth_expired`]) and both
+/// `config.isolated` and `config.heal_isolated_auth_on_expiry` are `true`,
+/// `execute()` makes one best-effort attempt to heal the real shared
+/// credentials ([`heal::heal_shared_credentials`] — its own failure is
+/// swallowed, never surfacing in place of the real error), rebuilds a **fresh**
+/// [`IsolatedConfigDir`] (the first attempt's guard is stale even after a
+/// successful heal, since it snapshotted credentials before the heal ran), and
+/// retries exactly once. The retry's `Result` becomes `execute()`'s own result,
+/// dropping the original error. This whole path is skipped — and behavior is
+/// byte-identical to before it existed — whenever `heal_isolated_auth_on_expiry`
+/// is `false` (the default) or the first failure does not match the predicate.
+///
+/// # Errors
+/// - [`Error::BinaryNotFound`] if the `claude` binary cannot be resolved.
+/// - [`Error::Isolation`] if `config.isolated` is set and the isolated config
+///   dir cannot be built.
+/// - [`Error::Spawn`] if the process fails to spawn or its output cannot be read.
+/// - [`Error::Timeout`] if the call does not complete within the timeout.
+/// - [`Error::Cli`] if the CLI produced no output envelope at all (bad argv, missing
+///   prompt) — the message is on stderr.
+/// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
+///   the message is in the envelope, not on stderr.
+/// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
+pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
+    let binary = resolve_binary()?;
+    let args = config.build_args(prompt);
+
+    // Built before the first `run_once` call so a mid-setup failure surfaces
+    // before we ever spawn, and so the guard's lifetime spans the whole call
+    // (including the timeout race) inside `run_once`.
+    //
+    // `new_async` (not `new`) because construction shells out to the macOS
+    // Keychain and blocks: on `new` that wait runs on this task's own worker
+    // thread, so a call here stalls every *other* task on the runtime — a
+    // concurrent `execute()` has been observed hitting `Error::Timeout` from
+    // this starvation alone, without ever spawning its subprocess.
+    let isolation_guard = if config.isolated {
+        Some(IsolatedConfigDir::new_async().await?)
+    } else {
+        None
     };
 
-    // Keep the guard alive through the whole call above; drop it explicitly
-    // here (after output has been read) rather than relying on end-of-scope,
-    // to make the "outlives the child" contract explicit.
+    let result = run_once(
+        &binary,
+        &args,
+        config,
+        isolation_guard.as_ref().map(IsolatedConfigDir::path),
+    )
+    .await;
+
+    // Keep the guard alive through the call above; drop it explicitly here
+    // (after output has been read) rather than relying on end-of-scope, to
+    // make the "outlives the child" contract explicit.
     drop(isolation_guard);
 
-    result
+    let should_heal_and_retry = config.isolated
+        && config.heal_isolated_auth_on_expiry
+        && matches!(&result, Err(e) if heal::is_isolated_auth_expired(e));
+
+    if !should_heal_and_retry {
+        return result;
+    }
+
+    // Best-effort: a heal failure must never replace or mask the real error —
+    // if it fails, still attempt the retry, since the shared file may already
+    // have healed by other means (e.g. a concurrent interactive session).
+    let _ = heal::heal_shared_credentials(&binary, heal::effective_heal_timeout(config)).await;
+
+    // The first attempt's guard is stale even after a successful heal — it
+    // snapshotted credentials before the heal ran — so this must be a fresh
+    // one, not the dropped `isolation_guard` above.
+    let retry_guard = IsolatedConfigDir::new_async().await?;
+    let retry_result = run_once(&binary, &args, config, Some(retry_guard.path())).await;
+    drop(retry_guard);
+
+    retry_result
 }
 
 #[cfg(test)]
@@ -506,6 +573,253 @@ mod tests {
         assert!(
             elapsed < Duration::from_secs(2),
             "the configured 200ms timeout was not the one that fired — call took {elapsed:?}"
+        );
+    }
+
+    /// Real captured 401/OAuth-expired envelope, byte-identical to the one
+    /// `heal::is_isolated_auth_expired`'s own tests exercise.
+    const AUTH_EXPIRED_ENVELOPE: &str =
+        include_str!("../tests/fixtures/cli-error-oauth-expired-2.1.270.json");
+
+    /// A minimal valid success envelope.
+    const SUCCESS_ENVELOPE: &str =
+        r#"{"total_cost_usd":0.0,"usage":{},"is_error":false,"result":"ok"}"#;
+
+    /// Writes a fake `CLAUDE_BINARY` script that tells an `execute()` call
+    /// apart from a bare `heal_shared_credentials` call by argv shape, since
+    /// `execute()`'s heal-and-retry path spawns the same binary path for both:
+    ///
+    /// - Invoked with `-p` as its first argument (every real `execute()`
+    ///   call, per `Config::build_args`): increments `counter_path` and runs
+    ///   `first_body` on the first such invocation, `second_body` on every
+    ///   subsequent one.
+    /// - Invoked with no `-p` (a bare `heal_shared_credentials` call, which
+    ///   spawns the binary with no args at all): appends a marker line to
+    ///   `heal_marker_path`, then fails exactly like the real live "no prompt
+    ///   provided" case — discarded by `heal_shared_credentials`.
+    #[cfg(unix)]
+    fn write_counting_binary(
+        counter_path: &std::path::Path,
+        heal_marker_path: &std::path::Path,
+        first_body: &str,
+        second_body: &str,
+    ) -> (tempfile::TempDir, PathBuf) {
+        write_fake_binary(&format!(
+            "if [ \"$1\" = \"-p\" ]; then\n  \
+             n=$(cat '{counter}' 2>/dev/null || echo 0)\n  \
+             n=$((n+1))\n  \
+             echo \"$n\" > '{counter}'\n  \
+             if [ \"$n\" -eq 1 ]; then\n{first}\n  else\n{second}\n  fi\n\
+             else\n  \
+             echo x >> '{heal_marker}'\n  \
+             echo 'Input must be provided either through stdin or as a prompt argument' >&2\n  \
+             exit 1\n\
+             fi\n",
+            counter = counter_path.display(),
+            heal_marker = heal_marker_path.display(),
+            first = first_body,
+            second = second_body,
+        ))
+    }
+
+    /// The retry-after-heal path recovers a call that would otherwise have
+    /// failed: first `-p` invocation returns the real captured 401/OAuth
+    /// envelope, second returns success. With both `config.isolated` and
+    /// `config.heal_isolated_auth_on_expiry` true, `execute()` must heal
+    /// (proven by the heal marker existing) and retry exactly once (proven by
+    /// the counter), returning the retry's `Ok`.
+    #[cfg(unix)]
+    #[test]
+    fn execute_heals_and_retries_once_after_isolated_auth_expiry() {
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let counter_path = dir.path().join("counter");
+        let heal_marker_path = dir.path().join("healed");
+
+        let first_body = format!(
+            "printf '%s' '{fixture}'\nexit 1",
+            fixture = AUTH_EXPIRED_ENVELOPE
+        );
+        let second_body = format!(
+            "printf '%s' '{success}'\nexit 0",
+            success = SUCCESS_ENVELOPE
+        );
+        let (_script_dir, script_path) =
+            write_counting_binary(&counter_path, &heal_marker_path, &first_body, &second_body);
+
+        let config = Config {
+            isolated: true,
+            heal_isolated_auth_on_expiry: true,
+            ..Config::default()
+        };
+
+        let outcome = run_with_fake_binary(&script_path, &config);
+        assert_eq!(outcome.text, "ok");
+
+        let invocations: u32 = std::fs::read_to_string(&counter_path)
+            .expect("counter file should exist")
+            .trim()
+            .parse()
+            .expect("counter file should hold a number");
+        assert_eq!(
+            invocations, 2,
+            "the CLAUDE_BINARY script must be invoked exactly twice: the failing \
+             attempt and the successful retry"
+        );
+        assert!(
+            heal_marker_path.exists(),
+            "heal_shared_credentials must have invoked the binary between the \
+             two execute() attempts"
+        );
+    }
+
+    /// The default-preservation contract: with `heal_isolated_auth_on_expiry`
+    /// left at its default `false`, the identical failing setup must return
+    /// the original error on the first failure, with the script invoked
+    /// exactly once and heal never attempted — behavior byte-identical to
+    /// before this ticket for every caller that does not opt in.
+    #[cfg(unix)]
+    #[test]
+    fn execute_does_not_heal_by_default_and_returns_the_original_error() {
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let counter_path = dir.path().join("counter");
+        let heal_marker_path = dir.path().join("healed");
+
+        let first_body = format!(
+            "printf '%s' '{fixture}'\nexit 1",
+            fixture = AUTH_EXPIRED_ENVELOPE
+        );
+        let second_body = format!(
+            "printf '%s' '{success}'\nexit 0",
+            success = SUCCESS_ENVELOPE
+        );
+        let (_script_dir, script_path) =
+            write_counting_binary(&counter_path, &heal_marker_path, &first_body, &second_body);
+
+        let config = Config {
+            isolated: true,
+            heal_isolated_auth_on_expiry: false,
+            ..Config::default()
+        };
+
+        let err = try_run_with_fake_binary(&script_path, &config)
+            .expect_err("should hard-fail without healing when opted out");
+
+        match err {
+            Error::Api {
+                status, message, ..
+            } => {
+                assert_eq!(status, Some(401));
+                assert!(message.contains("OAuth"));
+            }
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+
+        let invocations: u32 = std::fs::read_to_string(&counter_path)
+            .expect("counter file should exist")
+            .trim()
+            .parse()
+            .expect("counter file should hold a number");
+        assert_eq!(
+            invocations, 1,
+            "no retry should be attempted when heal_isolated_auth_on_expiry is false"
+        );
+        assert!(
+            !heal_marker_path.exists(),
+            "heal must never be invoked when the caller has not opted in"
+        );
+    }
+
+    /// Heal not fixing the underlying credential must still surface an error
+    /// — from the SECOND attempt, never a stale first-attempt error and never
+    /// a third attempt.
+    #[cfg(unix)]
+    #[test]
+    fn execute_returns_second_attempts_error_when_heal_does_not_fix_it() {
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let counter_path = dir.path().join("counter");
+        let heal_marker_path = dir.path().join("healed");
+
+        let same_body = format!(
+            "printf '%s' '{fixture}'\nexit 1",
+            fixture = AUTH_EXPIRED_ENVELOPE
+        );
+        let (_script_dir, script_path) =
+            write_counting_binary(&counter_path, &heal_marker_path, &same_body, &same_body);
+
+        let config = Config {
+            isolated: true,
+            heal_isolated_auth_on_expiry: true,
+            ..Config::default()
+        };
+
+        let err = try_run_with_fake_binary(&script_path, &config)
+            .expect_err("heal did not fix the credential, so the call must still fail");
+        assert!(
+            matches!(
+                err,
+                Error::Api {
+                    status: Some(401),
+                    ..
+                }
+            ),
+            "expected the second attempt's Error::Api, got {err:?}"
+        );
+
+        let invocations: u32 = std::fs::read_to_string(&counter_path)
+            .expect("counter file should exist")
+            .trim()
+            .parse()
+            .expect("counter file should hold a number");
+        assert_eq!(
+            invocations, 2,
+            "exactly one retry attempt — never a stale first error, never a third attempt"
+        );
+    }
+
+    /// The predicate must gate the whole mechanism: a first failure of a
+    /// DIFFERENT shape (no envelope at all — `Error::Cli`) must never trigger
+    /// a heal attempt, and the script must be invoked exactly once.
+    #[cfg(unix)]
+    #[test]
+    fn execute_does_not_heal_for_a_non_matching_error_shape() {
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let counter_path = dir.path().join("counter");
+        let heal_marker_path = dir.path().join("healed");
+
+        let cli_error_body = "echo 'error: something else went wrong' >&2\nexit 1";
+        let unreachable_body = "echo 'unreachable — no retry should ever run this' >&2\nexit 1";
+        let (_script_dir, script_path) = write_counting_binary(
+            &counter_path,
+            &heal_marker_path,
+            cli_error_body,
+            unreachable_body,
+        );
+
+        let config = Config {
+            isolated: true,
+            heal_isolated_auth_on_expiry: true,
+            ..Config::default()
+        };
+
+        let err = try_run_with_fake_binary(&script_path, &config)
+            .expect_err("a non-matching error shape must still surface as an error");
+        assert!(
+            matches!(err, Error::Cli { .. }),
+            "expected Error::Cli, got {err:?}"
+        );
+
+        let invocations: u32 = std::fs::read_to_string(&counter_path)
+            .expect("counter file should exist")
+            .trim()
+            .parse()
+            .expect("counter file should hold a number");
+        assert_eq!(
+            invocations, 1,
+            "the predicate must gate the whole mechanism, not every isolated failure"
+        );
+        assert!(
+            !heal_marker_path.exists(),
+            "heal must never be invoked for a non-matching error shape"
         );
     }
 

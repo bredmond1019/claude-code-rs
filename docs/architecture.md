@@ -109,6 +109,8 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
   the `new_async()` wrapper, which runs it on tokio's blocking pool so the Keychain wait cannot park
   a worker thread); `with_sources(creds_json,
   claude_json_src)` is an injectable constructor for tests. Re-exported from `lib.rs`.
+  Because it strips `refreshToken`, an isolated call can never self-heal its own expired/invalid
+  access token from a frozen snapshot — see **Heal-and-retry** below.
 - **`Outcome`** (`src/parse.rs`) — parsed CLI result: `cost_usd` (from `total_cost_usd`), `usage`
   (`Usage`), `model_usage` (`BTreeMap<String, ModelUsage>`, from `modelUsage`), `text` (from
   `result`), `is_error`, `api_error_status`, and `structured_output` (present only when the call
@@ -139,6 +141,30 @@ read — spawns it with `config.build_args(prompt)`, wraps the whole call in one
 → CLI emits `--output-format json` → `parse::parse_result` extracts `total_cost_usd`, top-level
 `usage`, `modelUsage`, and `result` → `Outcome` returned to the caller. The default (non-isolated,
 no overrides) path is unchanged.
+
+## Heal-and-retry
+
+`IsolatedConfigDir`'s `refreshToken` redaction (above) is deliberate — it stops an isolated
+subprocess from consuming the single-use refresh token and revoking a concurrent interactive
+session — but it also means an isolated call only ever sees a frozen credential snapshot: if that
+snapshot's access token has expired or is invalid, the call hard-fails with `Error::Api { status:
+Some(401), .. }` and nothing retries it on its own.
+
+`src/heal.rs` names that exact failure shape (`heal::is_isolated_auth_expired`, an `Error::Api` with
+status `401` whose message contains `"OAuth"`) and provides the recovery
+(`heal::heal_shared_credentials`), wired into `execute()`: when `config.isolated &&
+config.heal_isolated_auth_on_expiry` and the first `run_once` attempt fails matching that predicate,
+`execute()` spawns a bare, **unisolated** `claude` process (no `CLAUDE_CONFIG_DIR` override, so it
+reads and can refresh the real shared credentials, `refreshToken` included), discards that process's
+own outcome (it is expected to error out on the missing prompt after already performing its OAuth
+handshake — only a spawn failure or the wrapping `heal_timeout` elapsing are surfaced, and even those
+are swallowed here), rebuilds a **fresh** `IsolatedConfigDir` (the first attempt's guard snapshotted
+credentials before the heal ran, so it stays stale even after a successful heal), and retries
+`run_once` exactly once through it — that retry's `Result` becomes `execute()`'s own result. Never a
+loop, and the whole path is skipped — byte-identical to before it existed — whenever
+`heal_isolated_auth_on_expiry` is `false` (the default) or the failure does not match the predicate.
+`execute()`'s spawn-and-parse body is itself just `run_once`, extracted once so both the first
+attempt and the heal-retry share it rather than duplicating the logic.
 
 ## Why the guard is built off-thread
 

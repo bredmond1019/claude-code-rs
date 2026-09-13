@@ -53,6 +53,11 @@ gives back.
   per-line) whose duration is `config.timeout` when set, else the built-in `DEFAULT_TIMEOUT` of
   300s, killing the child on drop/timeout. Errors: `Error::BinaryNotFound`,
   `Error::Spawn`, `Error::Timeout`, `Error::Parse`, `Error::Isolation`.
+  When `config.isolated && config.heal_isolated_auth_on_expiry` and that call fails with the exact
+  shape of an expired/invalid isolated credential snapshot, `execute()` makes one best-effort attempt
+  to heal the real shared credentials, rebuilds a fresh `IsolatedConfigDir`, and retries exactly
+  once — see [Heal-and-retry](#heal-and-retry) below. Both knobs default to inert, so this path is
+  skipped and behavior is byte-identical to before it existed for every caller that does not opt in.
 
 ## Config
 
@@ -79,12 +84,39 @@ never appear in argv.
 | `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
 | `max_turns: Option<u32>` | `--max-turns <n>` — emitted only when `Some`; omitted entirely when `None` (default) |
 | `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
+| `heal_isolated_auth_on_expiry: bool` | when `true` (default `false`), an isolated call that fails with the exact shape of an expired/invalid credential snapshot triggers a best-effort heal-and-retry-once — see [Heal-and-retry](#heal-and-retry); not a CLI flag |
+| `heal_timeout: Option<Duration>` | overrides the whole-call timeout applied to the heal attempt; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_HEAL_TIMEOUT` of 15s; `Some(duration)` overrides it. Mirrors `timeout`'s shape |
 
 `Config::build_args(&self, prompt: &str) -> Vec<String>` builds the exact argv: `-p <prompt>`, then
 the flags above in field order, always ending with `--output-format json`. `cwd`, `env`,
-`isolated`, and `timeout` are not CLI flags — the first three are applied to the `Command` directly
-by `execute()`, and `timeout` only sets the duration of `execute()`'s Rust-side timeout, so
-`build_args`'s output is byte-identical whatever it is set to.
+`isolated`, `timeout`, `heal_isolated_auth_on_expiry`, and `heal_timeout` are not CLI flags — the
+first three are applied to the `Command` directly by `execute()`, and the timeout fields only set
+the duration of a Rust-side `tokio::time::timeout`, so `build_args`'s output is byte-identical
+whatever any of them is set to.
+
+## Heal-and-retry
+
+`IsolatedConfigDir` deliberately strips `refreshToken` from the copy it hands an isolated
+subprocess (see below), so an isolated call can never self-heal an expired or invalid access token
+on its own — it only ever gets a frozen snapshot at copy time. When `config.isolated &&
+config.heal_isolated_auth_on_expiry` and a call fails with `heal::is_isolated_auth_expired(&err)`
+true (an `Error::Api` with status `401` whose message contains `"OAuth"` — deliberately narrow, not
+every isolated failure), `execute()`:
+
+1. Makes one best-effort call to `heal::heal_shared_credentials` — spawns the same `claude` binary
+   with **no** `CLAUDE_CONFIG_DIR` override, so it reads and, if needed, refreshes the real shared
+   credentials (including the `refreshToken` an isolated copy never gets). The spawned process is
+   given no prompt and no stdin, so it is expected to perform its OAuth handshake and then fail on
+   the missing prompt; that failure (and any output) is always discarded — only a spawn failure or
+   the wrapping `heal_timeout` elapsing are this step's own errors, and even those are swallowed
+   here, never surfacing in place of the real error.
+2. Rebuilds a **fresh** `IsolatedConfigDir` — the first attempt's guard is stale even after a
+   successful heal, since it snapshotted credentials before the heal ran.
+3. Retries the call exactly once through that fresh guard, returning the retry's `Result` as
+   `execute()`'s own result (the original error is dropped).
+
+Never a loop, and skipped entirely — behavior byte-identical to before this existed — whenever
+`heal_isolated_auth_on_expiry` is `false` (the default) or the failure does not match the predicate.
 
 ## IsolatedConfigDir
 
