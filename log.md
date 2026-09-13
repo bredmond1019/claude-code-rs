@@ -5,7 +5,7 @@ description: Chronological log of work completed for claude-code-rs.
 doc_id: log
 layer: [factory]
 status: active
-timestamp: "2026-09-02T16:10:59Z"
+timestamp: "2026-09-13T18:45:00Z"
 keywords: [work log, session history, development log]
 related: [status, context]
 ---
@@ -13,6 +13,26 @@ related: [status, context]
 # Log — claude-code-rs
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## 2026-09-13 — Isolated calls self-heal an expired/invalid OAuth token (`CC.ticket.heal-isolated-auth-expiry`)
+
+- **What:** new `src/heal.rs` (`is_isolated_auth_expired`, `heal_shared_credentials`); new
+  `Config::heal_isolated_auth_on_expiry` (default `false`) and `Config::heal_timeout` (default
+  `None`); `execute()`'s spawn-and-parse body extracted into `run_once` and wired with a
+  heal-and-retry-once path gated on both opt-in fields and the predicate matching. Neither new
+  field is a CLI flag. `docs/api.md`/`docs/architecture.md` patched with a Heal-and-retry section;
+  new captured fixture `tests/fixtures/cli-error-oauth-expired-2.1.270.json`.
+- **Why:** `IsolatedConfigDir` deliberately strips `refreshToken` from an isolated call's
+  credential snapshot (so a background subprocess can't revoke a concurrent interactive session),
+  which means an isolated call could never recover from its own expired access token — it just
+  hard-failed. This closes that gap for callers who opt in, while leaving every non-opted-in caller
+  byte-identical to before.
+- **Gates:** `/sdlc-task` run — 4/4 tasks, all harness gates green (fmt/clippy/test/build/
+  cargo-audit); `/close-out` re-ran the same suite plus the emoji gate, coverage scan (no blocking
+  gaps), and doc-staleness sweep (nothing stale) — all clean.
+- **Refs:** `planning/CC.ticket.heal-isolated-auth-expiry/` — `workflow_run_id: wf_8ea0d335-01a`.
 
 ---
 
