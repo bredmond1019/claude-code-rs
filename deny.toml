@@ -1,4 +1,4 @@
-# cargo-deny — dependency license policy (HQ D75).
+# cargo-deny — dependency license policy.
 #
 # This repo ships `MIT OR Apache-2.0`. That is only honest if nothing in the
 # dependency tree imposes a stronger obligation, so this file is the check.
@@ -13,7 +13,7 @@
 #
 # GPL / AGPL / LGPL-only are deliberately absent. If a future dependency pulls
 # one in, this check fails and the choice is: drop the dependency, or revisit
-# D75. Do not widen this list to make the build green.
+# this policy. Do not widen this list to make the build green.
 
 [licenses]
 allow = [

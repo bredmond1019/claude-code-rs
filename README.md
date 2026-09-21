@@ -163,7 +163,7 @@ cargo test -- --ignored  # + the live canary that diffs a real `claude` response
 
 - [`docs/index.md`](docs/index.md) — documentation index
 - [`docs/architecture.md`](docs/architecture.md) — module map, core types, data flow
-- [`docs/api.md`](docs/api.md) — full public API surface and the `engine-rs` consumer contract
+- [`docs/api.md`](docs/api.md) — full public API surface and the downstream consumer contract
 - [`tests/fixtures/README.md`](tests/fixtures/README.md) — CLI response fixture provenance and re-capture steps
 - [`CHANGELOG.md`](./CHANGELOG.md) — what changed in 2.0.0 and why
 - [docs.rs/claude-sdk-rs](https://docs.rs/claude-sdk-rs) — generated API reference

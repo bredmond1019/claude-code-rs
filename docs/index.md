@@ -47,11 +47,8 @@ doc is the authority.
 | Doc | What it covers |
 |---|---|
 | [architecture.md](architecture.md) | How a call flows through the crate; module map; core types; failure routing |
-| [api.md](api.md) | Field-by-field public surface and the `engine-rs` consumer contract |
+| [api.md](api.md) | Field-by-field public surface and the downstream consumer contract |
 | [`tests/fixtures/README.md`](../tests/fixtures/README.md) | Provenance of the captured CLI responses — the authority for `Outcome`'s shape |
-| [`hooks/README.md`](../hooks/README.md) | The repo's git hooks and how to enable them |
 | [`CHANGELOG.md`](../CHANGELOG.md) | What changed in 2.0.0 and why |
 
-Project strategy and current focus live in the company-brain vault at
-`agentic-portfolio/core/_planning/claude-code-rs/` (surfaced locally as `planning/`, which is
-gitignored and therefore not linkable from a public page).
+Project planning content lives outside this public repo and is not linkable from here.

@@ -118,7 +118,7 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
   name exists only as a `model_usage` key; `Outcome::primary_model()` picks one by a documented
   heuristic (cost, then output tokens, then key order) and returns `None` when none ran.
   Re-exported from `lib.rs`. **The authority for this shape is `tests/fixtures/`** — real captured
-  CLI responses — per decision D2, not this page.
+  CLI responses — not this page.
 - **`Usage`** (`src/parse.rs`) — token counts: `input_tokens`, `output_tokens`,
   `cache_creation_input_tokens`, `cache_read_input_tokens`.
 - **`ModelUsage`** (`src/parse.rs`) — per-model counts plus `cost_usd` (from `costUSD`). Note the CLI
@@ -181,9 +181,9 @@ the wait lands on the blocking pool, where blocking is what the threads are for.
 otherwise identical, including the best-effort `keychain → file → none` credential fallback; only
 the thread the wait runs on changed.
 
-This is not hypothetical. On 2026-09-02 two concurrent isolated calls from `engine-rs` (an
-SDLC_FLOW dispatch and an SDLC_TASK dispatch) made the second return `Error::Timeout` against a
-120s budget — starved by the first call's keychain read, having never spawned its own subprocess.
+This is not hypothetical. On 2026-09-02 two concurrent isolated calls from a downstream orchestration
+engine made the second return `Error::Timeout` against a 120s budget — starved by the first call's
+keychain read, having never spawned its own subprocess.
 
 **The subtlety worth keeping:** the guard is built *before* the `tokio::time::timeout` wrapper, not
 inside it. So a slow keychain read never consumed its **own** call's timeout budget — it consumed

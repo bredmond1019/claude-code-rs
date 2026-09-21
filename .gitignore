@@ -15,3 +15,26 @@ target/
 # crates/engine-core/planning/ (knowledge.md, memory.md, archived SDLC worklogs)
 # to its public GitHub remote for weeks. Anchored-rule gap, not a one-off.
 **/planning/
+
+# Python bytecode (e.g. .claude/workflows/bin/ tooling)
+__pycache__/
+*.pyc
+
+# ---------------------------------------------------------------------------
+# Fleet harness — DERIVED, not authored here, and not useful to an outside
+# contributor. `.claude/` and `.agents/` are content-hash-synced copies generated
+# from an upstream template (see .claude/.harness-manifest.json), not authored
+# here, and they carry internal paths and vocabulary. Nothing in this crate's
+# source references them.
+/.claude/
+/.agents/
+/hooks/
+/scripts/
+
+# Agent instruction files — they describe the private brain vault layout.
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+
+# Internal chronological work log.
+/log.md

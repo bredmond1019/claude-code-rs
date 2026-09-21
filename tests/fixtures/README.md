@@ -8,7 +8,8 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 > itself, and passed for months while the real schema drifted out from under them — `model` moved
 > into `modelUsage`, and response text moved from `content` blocks to `result`. Six documents and
 > test suites all agreed with each other and all were wrong. A captured fixture is the only artifact
-> that can't lie about the vendor's shape. See `planning/decisions/D2-cli-schema-provenance.md`.
+> that can't lie about the vendor's shape (recorded in this project's internal decision log, not
+> published here).
 
 ## What's here
 

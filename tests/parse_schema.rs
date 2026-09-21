@@ -45,7 +45,7 @@ fn parses_captured_success_envelope() {
 }
 
 /// The model name exists **only** as a `modelUsage` key — there is no top-level `model` field.
-/// This is the drift that broke EN.2.A's live test.
+/// This is the drift that broke a downstream consumer's live test.
 #[test]
 fn model_name_is_read_from_the_model_usage_map() {
     let outcome = parse_result(FIXTURE_SUCCESS).expect("real success capture must parse");

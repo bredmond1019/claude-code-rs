@@ -10,7 +10,7 @@ All notable changes to this crate are documented here.
   true }` built its `IsolatedConfigDir` synchronously, so the macOS Keychain lookup
   (`security find-generic-password`) ran on the async task's own worker thread for its full
   duration. Because `securityd` serializes concurrent keychain reads, two concurrent isolated
-  calls could starve the runtime — observed in `engine-rs` on 2026-09-02, where one call returned
+  calls could starve the runtime — observed in a downstream consumer on 2026-09-02, where one call returned
   `Error::Timeout` against a 120s budget without ever spawning its subprocess. The construction now
   runs on tokio's blocking pool.
 

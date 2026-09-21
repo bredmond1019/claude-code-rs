@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: claude-code-rs Public API
-description: The public library surface — execute(), Config, Outcome — for consumers like engine-rs.
+description: The public library surface — execute(), Config, Outcome — for downstream consumers.
 doc_id: api
 layer: [engine, infra]
 project: claude-code-rs
@@ -154,8 +154,8 @@ model served it.
 
 `Outcome` (`src/parse.rs`) mirrors the CLI's `--output-format json` envelope. **The authority for
 this shape is `tests/fixtures/` — real captured responses — not this page.** If the two disagree,
-the fixtures are right and this page is stale. See [`tests/fixtures/README.md`](../tests/fixtures/README.md) and this repo's decision D2
-(`planning/decisions/D2-cli-schema-provenance.md` — in the gitignored brain vault, not on GitHub).
+the fixtures are right and this page is stale. See [`tests/fixtures/README.md`](../tests/fixtures/README.md)
+for provenance (the decision record behind it is internal, not published here).
 
 - `cost_usd: f64` — from `total_cost_usd`.
 - `usage: Usage` — `input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
@@ -185,11 +185,11 @@ returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`,
 
 Who else depends on this surface, and why that dependency needs no version pin.
 
-`engine-rs`'s `ClaudeCodeStep::process` (EN.2.A) calls `execute`, writes
-`{content, cost_usd, model}` into its own `TaskContext::nodes` entry, and stamps `NodeRun.usage`.
-Recorded in engine-rs decision D4.
+A known downstream consumer is a Rust workflow engine, whose `ClaudeCodeStep::process` calls
+`execute`, writes `{content, cost_usd, model}` into its own task-context node entry, and stamps
+the node run's usage.
 
-Note this boundary needs no version pin or contract doc: `engine-rs` consumes this crate through a
-Cargo **path dependency** and constructs `Outcome` as a struct literal, so `rustc` enforces the
+Note this boundary needs no version pin or contract doc: that consumer depends on this crate through
+a Cargo **path dependency** and constructs `Outcome` as a struct literal, so `rustc` enforces the
 seam on every build — more strictly than prose could. The boundary that *does* need evidence is the
 one above it, between this crate and the vendor's CLI, which is what the fixtures cover.
