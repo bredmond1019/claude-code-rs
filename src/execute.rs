@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::heal;
 use crate::isolation::IsolatedConfigDir;
-use crate::parse::{self, Outcome};
+use crate::parse::{self, Outcome, ResultSubtype};
 
 /// Default whole-call timeout applied to every `execute()` invocation that does
 /// not set [`Config::timeout`].
@@ -59,6 +59,8 @@ fn resolve_binary() -> Result<PathBuf> {
 /// - [`Error::Timeout`] if the call does not complete within the timeout.
 /// - [`Error::Cli`] if the CLI produced no output envelope at all (bad argv, missing
 ///   prompt) — the message is on stderr.
+/// - [`Error::MaxTurns`] if the CLI reported `is_error` with `subtype: error_max_turns`
+///   (the call ran out of turns).
 /// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
@@ -113,6 +115,16 @@ async fn run_once(
 
         // `is_error` is the only trustworthy signal here: the envelope reports
         // `subtype: "success"` even when the call failed.
+        //
+        // The turn-ceiling shape must be checked first — it moves the whole
+        // `outcome`, and the `Error::Api` block below it partially moves
+        // individual fields out of `outcome`, so the two cannot be reordered
+        // the other way. Every other is_error envelope (including one whose
+        // subtype is absent or `"success"`) still falls through unchanged.
+        if outcome.is_error && matches!(outcome.subtype, Some(ResultSubtype::ErrorMaxTurns)) {
+            return Err(Error::MaxTurns(Box::new(outcome)));
+        }
+
         if outcome.is_error {
             return Err(Error::Api {
                 status: outcome.api_error_status,
@@ -171,6 +183,8 @@ async fn run_once(
 /// - [`Error::Timeout`] if the call does not complete within the timeout.
 /// - [`Error::Cli`] if the CLI produced no output envelope at all (bad argv, missing
 ///   prompt) — the message is on stderr.
+/// - [`Error::MaxTurns`] if the CLI reported `is_error` with `subtype: error_max_turns`
+///   (the call ran out of turns).
 /// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
@@ -488,6 +502,33 @@ mod tests {
                 );
             }
             other => panic!("expected Error::Api, got {other:?}"),
+        }
+    }
+
+    /// The turn-ceiling shape must be routed to `Error::MaxTurns`, never
+    /// `Error::Api` or `Error::Parse`: a stub CLI emitting the real recorded
+    /// `error_max_turns` envelope (no `result` key) must still parse and
+    /// surface as a typed, attributable error carrying the billed envelope's
+    /// `session_id`/`total_cost_usd`.
+    #[cfg(unix)]
+    #[test]
+    fn error_max_turns_envelope_becomes_typed_max_turns_error() {
+        let fixture = include_str!("../tests/fixtures/error_max_turns.json");
+        let escaped = fixture.replace('\'', "'\\''");
+        let (_dir, script_path) = write_fake_binary(&format!("printf '%s' '{escaped}'\nexit 1\n"));
+
+        let err = try_run_with_fake_binary(&script_path, &Config::default())
+            .expect_err("an error_max_turns envelope must not surface as Ok");
+
+        match err {
+            Error::MaxTurns(outcome) => {
+                assert_eq!(
+                    outcome.session_id.as_deref(),
+                    Some("4a238e79-e1d1-4dfb-a10c-df94ce518c17")
+                );
+                assert!((outcome.cost_usd - 0.0213511).abs() < 1e-9);
+            }
+            other => panic!("expected Error::MaxTurns, got {other:?}"),
         }
     }
 

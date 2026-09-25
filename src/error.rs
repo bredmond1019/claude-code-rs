@@ -1,5 +1,7 @@
 //! Crate-level error surface for `claude-code-rs`.
 
+use crate::parse::Outcome;
+
 /// Errors that can occur while building, spawning, or parsing output from the
 /// `claude` CLI subprocess.
 #[derive(Debug, thiserror::Error)]
@@ -63,6 +65,20 @@ pub enum Error {
         /// The envelope's `usage` block. Same reasoning as `cost_usd`.
         usage: crate::parse::Usage,
     },
+
+    /// The CLI ran, reached the API, and stopped only because it hit its
+    /// configured turn ceiling (`is_error: true`, `subtype: error_max_turns`).
+    ///
+    /// Distinct from [`Error::Api`]: this is not a malformed response or an
+    /// API-side failure — the call simply ran out of turns. `Error::Api`
+    /// covers every OTHER `is_error` shape.
+    ///
+    /// The whole envelope is boxed and kept intact — never destructured
+    /// field-by-field the way [`Error::Api`] is — so the caller keeps the
+    /// billed envelope's `cost_usd`, `usage`, `session_id`, `num_turns`, and
+    /// `errors` together for attribution.
+    #[error("claude call hit its turn ceiling ({:?} turns, subtype {:?})", .0.num_turns, .0.subtype)]
+    MaxTurns(Box<Outcome>),
 
     /// Setting up an isolated `CLAUDE_CONFIG_DIR` (temp dir creation, or a
     /// credentials/`.claude.json` source that exists but could not be read
