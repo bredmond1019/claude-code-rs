@@ -13,6 +13,7 @@ pub use error::{Error, Result};
 pub use execute::execute;
 pub use isolation::IsolatedConfigDir;
 pub use parse::Outcome;
+pub use parse::ResultSubtype;
 
 #[cfg(test)]
 mod tests {

@@ -165,10 +165,21 @@ for provenance (the decision record behind it is internal, not published here).
   further fields that this crate ignores.
 - `model_usage: BTreeMap<String, ModelUsage>` — from `modelUsage`. **The only place the model name
   appears**; there is no top-level `model` field. Empty on the error envelope.
-- `text: String` — from `result`. The reply on success, the error message on failure. Required: a
-  default would render its removal as an empty reply, which is silent data loss.
+- `text: String` — from `result`. The reply on success, the error message on failure. Defaulted to
+  `""`, not required: the `error_max_turns` envelope carries no `result` key at all, and a required
+  field there would fail the whole parse and lose the billed envelope (cost, usage, session_id)
+  with it.
 - `is_error: bool` — the only trustworthy failure signal. The envelope reports
   `subtype: "success"` even when the call failed, so `subtype` must never be used for this.
+- `subtype: Option<ResultSubtype>` — from `subtype`. `ResultSubtype` is a closed enum (`Success`,
+  `ErrorMaxTurns`, `ErrorDuringExecution`) plus a catch-all `Unknown(String)` for any value this
+  crate does not yet recognise — the wire is a vendor contract this crate does not own, so an
+  unrecognised subtype parses rather than failing.
+- `num_turns: Option<u32>` — from `num_turns`. Present on both envelopes; most useful alongside
+  `ResultSubtype::ErrorMaxTurns`, where it reports how many turns were used before the ceiling
+  stopped the call.
+- `errors: Vec<String>` — from `errors`. Empty on a normal success envelope; populated on an error
+  envelope such as `error_max_turns`, carrying the human-readable turn-limit message.
 - `api_error_status: Option<u16>` — `None` on success.
 - `structured_output: Option<serde_json::Value>` — from `structured_output`, present only when the
   call was made with `Config.json_schema` set (CLI: `--json-schema`); absent (not `null`) on a
@@ -180,8 +191,9 @@ ranking by cost, then output tokens, then key order. This is **this crate's heur
 something the CLI reports — a single call can bill several models. `None` when no model ran.
 
 `parse::parse_result(json: &str) -> Result<Outcome>` parses a raw `claude` CLI JSON response;
-returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`, `usage`, `result`,
-`is_error`). Unknown fields are ignored, so a vendor addition never breaks the parse.
+returns `Error::Parse` if invalid or missing a required field (`total_cost_usd`, `usage`,
+`is_error`). `result` is not required — the `error_max_turns` envelope carries no `result` key at
+all. Unknown fields are ignored, so a vendor addition never breaks the parse.
 
 ## Consumer Contract
 

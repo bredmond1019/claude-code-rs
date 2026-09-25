@@ -9,8 +9,14 @@
 //! Fields are required (loud on absence) or defaulted (lenient) according to one rule: **is absence
 //! distinguishable from a legitimate value?**
 //!
-//! - [`Outcome::text`] is required. If `result` vanished, a default would yield `""` — indistinguishable
-//!   from the model genuinely replying with nothing. That is silent data loss, so it must fail loudly.
+//! - [`Outcome::text`] is defaulted. It was required until the `error_max_turns` envelope proved
+//!   that an absent `result` is a legitimate CLI state on that path, not silent data loss — that
+//!   envelope carries no `result` key at all, and a required field there would drop the whole
+//!   billed envelope (cost, usage, session_id) into `Error::Parse`. The 2026-07-16 drift this field
+//!   used to guard against is unaffected: it was the CLI silently *emptying* `result` on a
+//!   `subtype: "success"` reply, which the `unknown_fields_do_not_fail_parse`-style tests and the
+//!   live smoke test still catch — this change only stops treating an *absent* `result` on an
+//!   error envelope the same as that silent-emptying bug.
 //! - [`Outcome::api_error_status`] is defaulted. Its absence costs an HTTP status code on an error
 //!   that is still fully described by `is_error` and `text` — less detail, not lost data.
 //! - [`Outcome::structured_output`] is defaulted. Its absence means "no schema was requested" — a
@@ -109,8 +115,39 @@ pub struct Outcome {
     /// The response text (CLI: `result`).
     ///
     /// On the error envelope this carries the human-readable error message instead of a reply.
-    #[serde(rename = "result")]
+    ///
+    /// Defaulted to `""`, not required, per the leniency policy above: the `error_max_turns`
+    /// envelope carries no `result` key at all, and a required field there would fail the whole
+    /// parse and lose the billed envelope (cost, usage, session_id) with it.
+    #[serde(rename = "result", default)]
     pub text: String,
+
+    /// The envelope's reported subtype (CLI: `subtype`), e.g. `"success"` or `"error_max_turns"`.
+    ///
+    /// A closed set of known values plus a catch-all [`ResultSubtype::Unknown`] for forward
+    /// compatibility — the wire is a vendor contract this crate does not own, so an unrecognised
+    /// subtype parses rather than failing. `None` when the envelope carries no `subtype` at all.
+    ///
+    /// Never use this to distinguish success from failure — [`is_error`] is the only trustworthy
+    /// signal for that, per the struct-level doc above.
+    ///
+    /// [`is_error`]: Outcome::is_error
+    #[serde(default)]
+    pub subtype: Option<ResultSubtype>,
+
+    /// The number of turns the call took (CLI: `num_turns`).
+    ///
+    /// Present on both envelopes; most useful alongside [`ResultSubtype::ErrorMaxTurns`], where it
+    /// reports how many turns were actually used before the ceiling stopped the call.
+    #[serde(default)]
+    pub num_turns: Option<u32>,
+
+    /// Structured error messages the CLI attached to this call (CLI: `errors`).
+    ///
+    /// Empty on a normal success envelope; populated on an error envelope such as
+    /// `error_max_turns`, where it carries the human-readable turn-limit message.
+    #[serde(default)]
+    pub errors: Vec<String>,
 
     /// Whether the CLI reported a failure.
     ///
@@ -153,6 +190,55 @@ pub struct Outcome {
     pub structured_output: Option<serde_json::Value>,
 }
 
+/// The `claude` CLI's reported envelope subtype (CLI: `subtype`).
+///
+/// A closed set of the CLI's known values, plus a catch-all [`ResultSubtype::Unknown`] for forward
+/// compatibility — the wire is a vendor contract this crate does not own, so an unrecognised
+/// subtype parses into `Unknown` rather than failing the whole envelope.
+///
+/// Never use this to distinguish success from failure — [`Outcome::is_error`] is the only
+/// trustworthy signal for that; the envelope can report `subtype: "success"` even on a call that
+/// failed for a reason `is_error`/`subtype` disagree on (see the struct-level doc on [`Outcome`]).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "String")]
+pub enum ResultSubtype {
+    /// The call completed normally.
+    Success,
+    /// The call stopped because it hit its turn ceiling (CLI: `error_max_turns`).
+    ErrorMaxTurns,
+    /// The call failed during execution for a reason other than the turn ceiling.
+    ErrorDuringExecution,
+    /// A subtype value this crate does not yet recognise, carrying the raw wire string.
+    Unknown(String),
+}
+
+impl ResultSubtype {
+    /// The wire spelling for this subtype — the inverse of `From<String> for ResultSubtype`.
+    ///
+    /// Built from the same mapping as that `From` impl so the two can never drift apart into two
+    /// separate tables of the wire spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Success => "success",
+            Self::ErrorMaxTurns => "error_max_turns",
+            Self::ErrorDuringExecution => "error_during_execution",
+            Self::Unknown(raw) => raw,
+        }
+    }
+}
+
+impl From<String> for ResultSubtype {
+    fn from(raw: String) -> Self {
+        match raw.as_str() {
+            "success" => Self::Success,
+            "error_max_turns" => Self::ErrorMaxTurns,
+            "error_during_execution" => Self::ErrorDuringExecution,
+            _ => Self::Unknown(raw),
+        }
+    }
+}
+
 impl Outcome {
     /// The model that most plausibly produced this response.
     ///
@@ -189,7 +275,8 @@ impl Outcome {
 ///
 /// # Errors
 /// Returns [`crate::Error::Parse`] if `json` is not valid JSON or is missing a required field
-/// (`total_cost_usd`, `usage`, `result`, `is_error`).
+/// (`total_cost_usd`, `usage`, `is_error`). `result` is no longer required — see the module's
+/// leniency policy above; the `error_max_turns` envelope carries no `result` key at all.
 pub fn parse_result(json: &str) -> Result<Outcome> {
     Ok(serde_json::from_str(json)?)
 }
@@ -226,23 +313,67 @@ mod tests {
             api_error_status: None,
             session_id: None,
             structured_output: None,
+            subtype: None,
+            num_turns: None,
+            errors: Vec::new(),
         }
     }
 
-    /// `result` carries the response text; a default would render its removal as an empty reply.
-    /// This is the regression guard for the 2026-07-16 silent-data-loss drift.
+    /// Runtime-inversion control for AC1: the pre-change shape (a required, non-defaulted `result`
+    /// field) fails to deserialize the real `error_max_turns` fixture, immediately followed by
+    /// the current, lenient `parse_result` succeeding on the exact same bytes.
     #[test]
-    fn missing_result_field_fails_parse() {
+    fn error_max_turns_envelope_would_have_failed_the_old_required_result_field() {
+        /// Mirrors `Outcome::text`'s pre-change attribute: `result` required, no `default`.
+        #[derive(Deserialize)]
+        struct PreChangeShape {
+            #[serde(rename = "result")]
+            #[allow(dead_code)]
+            text: String,
+        }
+
+        let fixture = include_str!("../tests/fixtures/error_max_turns.json");
+
+        assert!(
+            serde_json::from_str::<PreChangeShape>(fixture).is_err(),
+            "the old required-result-field shape must reject the real error_max_turns envelope"
+        );
+        assert!(
+            parse_result(fixture).is_ok(),
+            "the current, lenient parse_result must accept the same envelope"
+        );
+    }
+
+    #[test]
+    fn error_max_turns_envelope_parses_subtype_num_turns_and_errors() {
+        let fixture = include_str!("../tests/fixtures/error_max_turns.json");
+        let outcome = parse_result(fixture).expect("the real error_max_turns envelope must parse");
+
+        assert_eq!(outcome.subtype, Some(ResultSubtype::ErrorMaxTurns));
+        assert_eq!(outcome.num_turns, Some(2));
+        assert_eq!(
+            outcome.errors,
+            vec!["Reached maximum number of turns (1)".to_string()]
+        );
+        assert!(outcome.text.is_empty());
+        assert!(outcome.session_id.is_some());
+        assert!(outcome.cost_usd > 0.0);
+    }
+
+    #[test]
+    fn unrecognised_subtype_parses_to_unknown() {
         let json = r#"{
             "total_cost_usd": 0.01,
             "usage": {"input_tokens": 1, "output_tokens": 1},
+            "result": "hi",
             "is_error": false,
-            "modelUsage": {"claude-opus-4-8": {"outputTokens": 1, "costUSD": 0.01}}
+            "subtype": "some_future_value"
         }"#;
 
-        assert!(
-            parse_result(json).is_err(),
-            "absent `result` must fail loudly, never default to an empty reply"
+        let outcome = parse_result(json).expect("an unrecognised subtype must not fail the parse");
+        assert_eq!(
+            outcome.subtype,
+            Some(ResultSubtype::Unknown("some_future_value".to_string()))
         );
     }
 
