@@ -19,6 +19,7 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 | `cli-error-2.1.211.json` | `claude` 2.1.211, 2026-07-16 | API error (`is_error: true`, HTTP 404) |
 | `cli-structured-2.1.214.json` | `claude` 2.1.214, 2026-07-18 | success with `--json-schema` (envelope: structured output) |
 | `cli-error-oauth-expired-2.1.270.json` | `claude` 2.1.270, 2026-09-13 | API error (`is_error: true`, HTTP 401, isolated call against a corrupted access token) |
+| `error_max_turns.json` | `claude` CLI, `--max-turns 1 --output-format json`, 2026-09-25, captured by the engine-rs lane | turn-limit stop (`is_error: true`, `subtype: error_max_turns`, no `result` key) |
 
 The filename carries the CLI version. **That is the version record** — this crate deliberately has
 no contract doc, changelog, or semver for the CLI schema: the other party is a vendor who never
@@ -29,6 +30,10 @@ and does not imply the older fixtures are stale.
 
 A fixture that was *not* captured must be named `*-HANDWRITTEN.json`. Never let an authored fixture
 wear a version number — that is precisely the lie described above.
+
+`error_max_turns.json` is a second, deliberate exception to the `cli-<kind>-<version>.json`
+convention: it is a real, captured envelope (not hand-written), but the CLI version was not recorded
+at capture time, so the filename carries no version — an omission, not an oversight.
 
 ## Capture procedure
 
