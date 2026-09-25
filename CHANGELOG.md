@@ -27,6 +27,21 @@ All notable changes to this crate are documented here.
   `match` over `Error` no longer compiles); this folds into the already-pending 3.0.0 major bump
   recorded by the existing carryover finding
   `claude-sdk-rs-next-publish-is-semver-major-error-api-gained-fields` (no second finding opened).
+- `Error::MaxTurns(Box<Outcome>)`: a new error variant for a CLI turn-limit stop
+  (`is_error: true`, `subtype: error_max_turns`), distinct from `Error::Api` (every other
+  `is_error` shape). The whole envelope is boxed and kept intact so callers retain the billed
+  fields (`cost_usd`, `usage`, `session_id`, `num_turns`, `errors`) for attribution.
+- `Outcome::subtype: Option<ResultSubtype>`, `Outcome::num_turns: Option<u32>`,
+  `Outcome::errors: Vec<String>`: new pub fields on `Outcome`. `ResultSubtype` is a new pub closed
+  enum (`Success` / `ErrorMaxTurns` / `ErrorDuringExecution` / `Unknown(String)`), re-exported from
+  the crate root. `Outcome::text` moved from a required to a defaulted field, because the
+  `error_max_turns` envelope carries no `result` key at all.
+  The new `Error` variant (on a non-`#[non_exhaustive]` enum) and the new `Outcome` fields are both
+  source-breaking — an exhaustive `match` over `Error` no longer compiles, and a full `Outcome`
+  struct literal with no `..Default::default()` no longer compiles. This sits next to the open
+  carryover finding `claude-sdk-rs-next-publish-is-semver-major-error-api-gained-fields`: the next
+  publish is semver-major for that reason (no second finding opened). The publish/revert decision
+  itself is out of scope here and belongs to `CC.chore.publish-or-revert-breaking-api-change`.
 - `Config::setting_sources: Option<Vec<String>>`: emits `--setting-sources=<comma-joined>` as one
   token. `Some(vec![])` loads no settings layers and so no CLAUDE.md/AGENTS.md chain, measured as
   ~21K first-turn context tokens against ~48K by default. `None` omits the flag (unchanged
