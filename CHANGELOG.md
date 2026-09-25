@@ -16,6 +16,17 @@ All notable changes to this crate are documented here.
 
 ### Added
 
+- `Config::permission_mode: Option<PermissionMode>`: a new closed `PermissionMode` enum
+  (`AcceptEdits`, `Auto`, `BypassPermissions`, `Manual`, `DontAsk`, `Plan`) emitting
+  `--permission-mode <mode>` from `build_args` when set; `None` omits the flag (unchanged
+  behaviour for every existing caller). A new `Config::validate()` method and a new
+  `Error::ConflictingPermissions` variant, raised when `dangerously_skip_permissions` and
+  `permission_mode` are both set — `execute()` now calls `validate()` before resolving the binary.
+  Adding a public field to `Config` and adding a new `Error` variant are both source-breaking (a
+  full `Config` struct literal without `..Default::default()` no longer compiles; an exhaustive
+  `match` over `Error` no longer compiles); this folds into the already-pending 3.0.0 major bump
+  recorded by the existing carryover finding
+  `claude-sdk-rs-next-publish-is-semver-major-error-api-gained-fields` (no second finding opened).
 - `Config::setting_sources: Option<Vec<String>>`: emits `--setting-sources=<comma-joined>` as one
   token. `Some(vec![])` loads no settings layers and so no CLAUDE.md/AGENTS.md chain, measured as
   ~21K first-turn context tokens against ~48K by default. `None` omits the flag (unchanged
