@@ -69,6 +69,15 @@ pub enum Error {
     /// or copied) failed.
     #[error("failed to set up isolated config dir: {0}")]
     Isolation(std::io::Error),
+
+    /// `Config::dangerously_skip_permissions` and `Config::permission_mode`
+    /// are alternative ways of controlling permissions; both are set at
+    /// once. Returned by [`crate::config::Config::validate`], which
+    /// [`crate::execute::execute`] calls before resolving the binary.
+    #[error(
+        "dangerously_skip_permissions and permission_mode are mutually exclusive — set at most one"
+    )]
+    ConflictingPermissions,
 }
 
 /// Crate-wide `Result` alias using [`Error`].

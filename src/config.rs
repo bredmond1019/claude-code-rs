@@ -2,6 +2,91 @@
 
 use std::time::Duration;
 
+/// The CLI's `--permission-mode <mode>` values, as a closed set so an unknown
+/// value is a compile error rather than a string that silently fails to
+/// match the CLI's own vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PermissionMode {
+    /// `acceptEdits` — auto-accept file edits.
+    AcceptEdits,
+    /// `auto` — the CLI's standard interactive prompting.
+    Auto,
+    /// `bypassPermissions` — skip all permission checks.
+    BypassPermissions,
+    /// `manual` — prompt for every tool use.
+    Manual,
+    /// `dontAsk` — deny any tool use not covered by an allow-list, never
+    /// prompting. The mode `Config::permission_mode` exists to support:
+    /// headless callers have no TTY to answer a prompt on, so `dontAsk` plus
+    /// an explicit `allowed_tools` list is the only way to grant a scoped
+    /// set of tools without hanging.
+    DontAsk,
+    /// `plan` — plan-only mode; no tool execution.
+    Plan,
+}
+
+impl PermissionMode {
+    /// Every variant, in declaration order — used by round-trip tests and by
+    /// any caller that needs to enumerate the full set.
+    pub const ALL: &'static [PermissionMode] = &[
+        PermissionMode::AcceptEdits,
+        PermissionMode::Auto,
+        PermissionMode::BypassPermissions,
+        PermissionMode::Manual,
+        PermissionMode::DontAsk,
+        PermissionMode::Plan,
+    ];
+
+    /// The exact CLI spelling for this mode's `--permission-mode` value —
+    /// the single source of truth other code and `Display` delegate to.
+    #[must_use]
+    pub fn as_cli_str(&self) -> &'static str {
+        match self {
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::Auto => "auto",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+            PermissionMode::Manual => "manual",
+            PermissionMode::DontAsk => "dontAsk",
+            PermissionMode::Plan => "plan",
+        }
+    }
+}
+
+impl std::fmt::Display for PermissionMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_cli_str())
+    }
+}
+
+/// Error returned by [`PermissionMode::from_str`] for a string that does not
+/// match any of the CLI's six `--permission-mode` values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsePermissionModeError(pub String);
+
+impl std::fmt::Display for ParsePermissionModeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown permission mode: {}", self.0)
+    }
+}
+
+impl std::error::Error for ParsePermissionModeError {}
+
+impl std::str::FromStr for PermissionMode {
+    type Err = ParsePermissionModeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "acceptEdits" => Ok(PermissionMode::AcceptEdits),
+            "auto" => Ok(PermissionMode::Auto),
+            "bypassPermissions" => Ok(PermissionMode::BypassPermissions),
+            "manual" => Ok(PermissionMode::Manual),
+            "dontAsk" => Ok(PermissionMode::DontAsk),
+            "plan" => Ok(PermissionMode::Plan),
+            other => Err(ParsePermissionModeError(other.to_string())),
+        }
+    }
+}
+
 /// Configuration for a single `claude` CLI invocation.
 ///
 /// Covers the ported flags from `claude-sdk-rs`'s config plus the env/cwd
@@ -71,6 +156,16 @@ pub struct Config {
     /// allow.
     pub dangerously_skip_permissions: bool,
 
+    /// Optional permission mode override (`--permission-mode <mode>`).
+    ///
+    /// `None` (the default) omits the flag entirely, so every existing
+    /// caller's argv is byte-identical. `Some(mode)` emits
+    /// `--permission-mode` followed by [`PermissionMode::as_cli_str`]'s CLI
+    /// spelling. Alternative to [`Config::dangerously_skip_permissions`] —
+    /// [`Config::validate`] rejects a `Config` that sets both, since
+    /// combining them is ambiguous about which permission behavior wins.
+    pub permission_mode: Option<PermissionMode>,
+
     /// Optional JSON Schema to enforce on Claude's reply (`--json-schema
     /// <json>`). When `Some`, `build_args` serializes it to compact JSON and
     /// emits the flag immediately before the trailing `--output-format json`
@@ -127,8 +222,9 @@ impl Config {
     ///
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
-    /// `--resume <id>`, `--dangerously-skip-permissions`, `--json-schema <json>`,
-    /// `--max-turns <n>`, `--setting-sources=<list>`, then always `--output-format json`.
+    /// `--resume <id>`, `--dangerously-skip-permissions`, `--permission-mode <mode>`,
+    /// `--json-schema <json>`, `--max-turns <n>`, `--setting-sources=<list>`, then
+    /// always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -174,6 +270,11 @@ impl Config {
             args.push("--dangerously-skip-permissions".to_string());
         }
 
+        if let Some(mode) = self.permission_mode {
+            args.push("--permission-mode".to_string());
+            args.push(mode.as_cli_str().to_string());
+        }
+
         if let Some(json_schema) = &self.json_schema {
             args.push("--json-schema".to_string());
             args.push(json_schema.to_string());
@@ -192,6 +293,22 @@ impl Config {
         args.push("json".to_string());
 
         args
+    }
+
+    /// Checks for conflicting settings that `build_args` cannot express
+    /// safely. `execute()` calls this first, before resolving the binary, so
+    /// a conflicting `Config` never spawns a subprocess.
+    ///
+    /// # Errors
+    /// [`crate::error::Error::ConflictingPermissions`] if both
+    /// `dangerously_skip_permissions` and `permission_mode` are set —
+    /// they are alternative ways of controlling permissions and combining
+    /// them is ambiguous about which one wins.
+    pub fn validate(&self) -> crate::error::Result<()> {
+        if self.dangerously_skip_permissions && self.permission_mode.is_some() {
+            return Err(crate::error::Error::ConflictingPermissions);
+        }
+        Ok(())
     }
 }
 
@@ -356,6 +473,93 @@ mod tests {
             args, default_args,
             "heal_isolated_auth_on_expiry and heal_timeout must never affect build_args output"
         );
+    }
+
+    #[test]
+    fn permission_mode_defaults_to_none_and_omits_flag() {
+        let config = Config::default();
+        assert!(config.permission_mode.is_none());
+        assert!(!config
+            .build_args("hi")
+            .contains(&"--permission-mode".to_string()));
+    }
+
+    #[test]
+    fn build_args_emits_permission_mode_and_allowed_tools_when_set() {
+        let config = Config {
+            permission_mode: Some(PermissionMode::DontAsk),
+            allowed_tools: vec!["Edit".to_string(), "Bash(git rm --cached:*)".to_string()],
+            ..Config::default()
+        };
+
+        let args = config.build_args("hi");
+
+        assert_eq!(
+            args,
+            vec![
+                "-p",
+                "hi",
+                "--allowedTools",
+                "Edit",
+                "--allowedTools",
+                "Bash(git rm --cached:*)",
+                "--permission-mode",
+                "dontAsk",
+                "--output-format",
+                "json",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn permission_mode_round_trips_through_cli_str_for_every_variant() {
+        use std::str::FromStr;
+        for mode in PermissionMode::ALL {
+            assert_eq!(PermissionMode::from_str(mode.as_cli_str()).unwrap(), *mode);
+        }
+    }
+
+    #[test]
+    fn permission_mode_from_str_rejects_unknown_value() {
+        use std::str::FromStr;
+        assert_eq!(
+            PermissionMode::from_str("not-a-mode"),
+            Err(ParsePermissionModeError("not-a-mode".to_string()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_both_dangerously_skip_permissions_and_permission_mode() {
+        let config = Config {
+            dangerously_skip_permissions: true,
+            permission_mode: Some(PermissionMode::Auto),
+            ..Config::default()
+        };
+        assert!(matches!(
+            config.validate(),
+            Err(crate::error::Error::ConflictingPermissions)
+        ));
+    }
+
+    #[test]
+    fn validate_accepts_dangerously_skip_permissions_alone() {
+        let config = Config {
+            dangerously_skip_permissions: true,
+            ..Config::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_permission_mode_alone() {
+        let config = Config {
+            permission_mode: Some(PermissionMode::DontAsk),
+            ..Config::default()
+        };
+        assert!(config.validate().is_ok());
     }
 
     #[test]

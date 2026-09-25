@@ -161,6 +161,9 @@ async fn run_once(
 /// is `false` (the default) or the first failure does not match the predicate.
 ///
 /// # Errors
+/// - [`Error::ConflictingPermissions`] if `config.dangerously_skip_permissions`
+///   and `config.permission_mode` are both set — checked first, before the
+///   binary is resolved or anything is spawned.
 /// - [`Error::BinaryNotFound`] if the `claude` binary cannot be resolved.
 /// - [`Error::Isolation`] if `config.isolated` is set and the isolated config
 ///   dir cannot be built.
@@ -172,6 +175,7 @@ async fn run_once(
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
 pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
+    config.validate()?;
     let binary = resolve_binary()?;
     let args = config.build_args(prompt);
 
@@ -326,6 +330,42 @@ mod tests {
     #[cfg(unix)]
     fn run_with_fake_binary(script_path: &std::path::Path, config: &Config) -> Outcome {
         try_run_with_fake_binary(script_path, config).expect("fake execute should succeed")
+    }
+
+    #[test]
+    fn execute_rejects_conflicting_permissions_before_resolving_binary() {
+        let _guard = CLAUDE_BINARY_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        // A path that does not exist on disk. If `validate()` did not run
+        // first, `resolve_binary()` would still succeed (it only checks the
+        // env var is set, not that the path exists) and the subsequent spawn
+        // would fail with `Error::Spawn`, not `Error::ConflictingPermissions`.
+        //
+        // SAFETY: single-threaded test env mutation, scoped to this test and
+        // serialized via `CLAUDE_BINARY_ENV_LOCK`.
+        unsafe {
+            std::env::set_var("CLAUDE_BINARY", "/nonexistent/path/to/claude");
+        }
+
+        let config = Config {
+            dangerously_skip_permissions: true,
+            permission_mode: Some(crate::config::PermissionMode::DontAsk),
+            ..Config::default()
+        };
+
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(execute(&config, "hi"));
+
+        unsafe {
+            std::env::remove_var("CLAUDE_BINARY");
+        }
+
+        assert!(matches!(result, Err(Error::ConflictingPermissions)));
     }
 
     #[cfg(unix)]

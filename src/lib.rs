@@ -8,7 +8,7 @@ pub mod execute;
 pub mod isolation;
 pub mod parse;
 
-pub use config::Config;
+pub use config::{Config, ParsePermissionModeError, PermissionMode};
 pub use error::{Error, Result};
 pub use execute::execute;
 pub use isolation::IsolatedConfigDir;
