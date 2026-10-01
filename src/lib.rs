@@ -2,6 +2,7 @@
 
 mod error;
 mod heal;
+mod permission_hook;
 
 pub mod config;
 pub mod execute;
@@ -13,6 +14,7 @@ pub use error::{Error, Result};
 pub use execute::execute;
 pub use isolation::IsolatedConfigDir;
 pub use parse::Outcome;
+pub use parse::PermissionDenial;
 pub use parse::ResultSubtype;
 
 #[cfg(test)]

@@ -20,6 +20,13 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 | `cli-structured-2.1.214.json` | `claude` 2.1.214, 2026-07-18 | success with `--json-schema` (envelope: structured output) |
 | `cli-error-oauth-expired-2.1.270.json` | `claude` 2.1.270, 2026-09-13 | API error (`is_error: true`, HTTP 401, isolated call against a corrupted access token) |
 | `error_max_turns.json` | `claude` CLI, `--max-turns 1 --output-format json`, 2026-09-25, captured by the engine-rs lane | turn-limit stop (`is_error: true`, `subtype: error_max_turns`, no `result` key) |
+| `hook-pretooluse-stdin-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | not an envelope: the `PreToolUse` hook's stdin payload (`hook_event_name`, `tool_name`, `tool_input.file_path`, ...) |
+| `cli-result-permission-denial-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | success envelope whose `PreToolUse` hook blocked a `Read` (`permission_denials[]` populated) |
+
+The two 2.1.273 fixtures were captured live by running `claude -p "<read the .env file>"
+--output-format json --settings '<PreToolUse hook JSON>'` in a temp dir holding a `.env`, with a
+hook that logged its stdin (the first file) and replied `{"decision":"block","reason":...}` on a
+match (the second file's `permission_denials`). Not recaptured; same redaction rules as below.
 
 The filename carries the CLI version. **That is the version record** — this crate deliberately has
 no contract doc, changelog, or semver for the CLI schema: the other party is a vendor who never
@@ -99,7 +106,8 @@ this table, the next person "helpfully" parses `subtype` and reintroduces the bu
 | `session_id` | **depend** | → `Outcome::session_id`. Present on **both** envelopes. The exact join key to the session transcript at `~/.claude/projects/<project>/<session_id>.jsonl` (the id is the filename stem). Redacted here to the all-zero sentinel — the tests assert type and presence, never the value. |
 | `uuid` | ignore | Identifying; redacted here. |
 | `duration_ms`, `duration_api_ms`, `ttft_ms`, `ttft_stream_ms`, `time_to_request_ms` | ignore | Timing. The three `ttft`/`time_to_request` keys are **absent from the error envelope** — which is why the canary compares success-to-success only. |
-| `num_turns`, `permission_denials`, `fast_mode_state` | ignore | Not needed by any consumer today. |
+| `permission_denials` | **depend** | → `Outcome::permission_denials`. Defaulted; the structural proof a `PreToolUse` hook denial fired. See `cli-result-permission-denial-2.1.273.json`. |
+| `num_turns`, `fast_mode_state` | ignore | Not needed by any consumer today. |
 
 ## Envelope differences
 

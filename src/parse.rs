@@ -188,6 +188,30 @@ pub struct Outcome {
     /// (via `result`) — this field is the pre-parsed object form.
     #[serde(default)]
     pub structured_output: Option<serde_json::Value>,
+
+    /// Tool calls the CLI blocked during this call (CLI: `permission_denials`).
+    ///
+    /// Populated when a `PreToolUse` hook (see `Config::denied_path_patterns`) or a permission rule
+    /// refused a tool call. This is the in-band, structural proof that an enforced denial fired --
+    /// check it rather than string-matching the reply text. Empty when nothing was denied.
+    ///
+    /// Defaulted, not required: every envelope captured before this field was modelled omits or
+    /// empties it, and an empty list is the legitimate "nothing denied" state.
+    #[serde(default)]
+    pub permission_denials: Vec<PermissionDenial>,
+}
+
+/// One tool call the CLI refused, as reported in the envelope's `permission_denials` array.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct PermissionDenial {
+    /// The denied tool's name (CLI: `tool_name`), e.g. `"Read"`.
+    pub tool_name: String,
+
+    /// The id of the denied tool call (CLI: `tool_use_id`).
+    pub tool_use_id: String,
+
+    /// The denied call's input (CLI: `tool_input`), e.g. `{"file_path": "..."}`.
+    pub tool_input: serde_json::Value,
 }
 
 /// The `claude` CLI's reported envelope subtype (CLI: `subtype`).
@@ -316,6 +340,36 @@ mod tests {
             subtype: None,
             num_turns: None,
             errors: Vec::new(),
+            permission_denials: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn permission_denial_fixture_parses_the_denied_read() {
+        let fixture = include_str!("../tests/fixtures/cli-result-permission-denial-2.1.273.json");
+        let outcome = parse_result(fixture).expect("the real hook-blocked envelope must parse");
+
+        assert_eq!(outcome.permission_denials.len(), 1);
+        let denial = &outcome.permission_denials[0];
+        assert_eq!(denial.tool_name, "Read");
+        assert!(!denial.tool_use_id.is_empty());
+        let path = denial.tool_input["file_path"]
+            .as_str()
+            .expect("tool_input must carry a file_path");
+        assert!(path.ends_with(".env"), "unexpected path: {path}");
+    }
+
+    #[test]
+    fn pre_existing_fixtures_have_no_permission_denials() {
+        let fixtures = [
+            include_str!("../tests/fixtures/cli-result-2.1.211.json"),
+            include_str!("../tests/fixtures/cli-error-2.1.211.json"),
+            include_str!("../tests/fixtures/cli-structured-2.1.214.json"),
+            include_str!("../tests/fixtures/cli-error-oauth-expired-2.1.270.json"),
+        ];
+        for fixture in fixtures {
+            let outcome = parse_result(fixture).expect("pre-existing fixture must parse");
+            assert!(outcome.permission_denials.is_empty());
         }
     }
 
