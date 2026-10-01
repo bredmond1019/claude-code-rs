@@ -169,6 +169,22 @@ loop, and the whole path is skipped — byte-identical to before it existed — 
 `execute()`'s spawn-and-parse body is itself just `run_once`, extracted once so both the first
 attempt and the heal-retry share it rather than duplicating the logic.
 
+## Enforced path-scoped denial
+
+`Config.disallowed_tools` can only deny a tool by name. To let a session use `Read`/`Grep`/`Glob`
+while guaranteeing it cannot read a secret-shaped path (`.env`, `credentials.json`), set
+`Config.denied_path_patterns`. When non-empty, `build_args` emits `--settings <inline json>`
+(built by `permission_hook::settings_json`) carrying a `PreToolUse` hook that the CLI itself runs
+before each matching tool call. The hook is a `python3 -c` one-liner that reads the hook's stdin
+JSON, fnmatch-tests `tool_input.file_path` against the embedded patterns, and replies
+`{"decision":"block",...}` on a match, so the CLI refuses the call rather than being asked to.
+With an empty vec (default) the flag is omitted and argv is unchanged.
+
+A caller verifies the denial fired through `Outcome.permission_denials` (`tool_name`,
+`tool_use_id`, `tool_input`), not by string-matching the reply: absence of a secret in `text` alone
+cannot distinguish a blocked read from a read that never happened. `tests/permission_hook.rs` holds
+the `#[ignore]`d live proof plus a no-pattern positive control showing the secret does leak.
+
 ## Why the guard is built off-thread
 
 Short version: building the isolated config dir shells out to the macOS Keychain and *waits*, and a

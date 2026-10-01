@@ -85,6 +85,7 @@ never appear in argv.
 | `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
 | `max_turns: Option<u32>` | `--max-turns <n>` — emitted only when `Some`; omitted entirely when `None` (default) |
 | `setting_sources: Option<Vec<String>>` | `--setting-sources=<list>` — always one `=`-joined token, sources comma-joined (e.g. `user,project`); emitted only when `Some`, omitted entirely when `None` (default). `Some(vec![])` emits `--setting-sources=` (load no settings layers, so no CLAUDE.md/AGENTS.md chain or project hooks) |
+| `denied_path_patterns: Vec<String>` | `--settings <json>` — when non-empty, emits one inline-JSON `PreToolUse` hook (matcher `Read\|Grep\|Glob`, built by `permission_hook::settings_json`) that blocks any call whose `tool_input.file_path` fnmatch-matches a pattern (e.g. `*/.env`); emitted right after `--setting-sources`, omitted entirely when empty (default). A block is recorded on `Outcome.permission_denials` |
 | `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
 | `heal_isolated_auth_on_expiry: bool` | when `true` (default `false`), an isolated call that fails with the exact shape of an expired/invalid credential snapshot triggers a best-effort heal-and-retry-once — see [Heal-and-retry](#heal-and-retry); not a CLI flag |
 | `heal_timeout: Option<Duration>` | overrides the whole-call timeout applied to the heal attempt; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_HEAL_TIMEOUT` of 15s; `Some(duration)` overrides it. Mirrors `timeout`'s shape |
@@ -185,6 +186,10 @@ for provenance (the decision record behind it is internal, not published here).
   call was made with `Config.json_schema` set (CLI: `--json-schema`); absent (not `null`) on a
   schemaless call. `text` still carries the same JSON as a string via `result` either way — this
   field is the pre-parsed object form.
+- `permission_denials: Vec<PermissionDenial>` — from `permission_denials`; each entry has
+  `tool_name`, `tool_use_id` and `tool_input` (a `serde_json::Value`, e.g. with a `file_path` key).
+  Empty (via `#[serde(default)]`) when nothing was denied or the envelope lacks the key. The
+  structural proof that a `Config.denied_path_patterns` hook fired.
 
 `Outcome::primary_model() -> Option<&str>` picks the most plausible model from `model_usage`,
 ranking by cost, then output tokens, then key order. This is **this crate's heuristic**, not
