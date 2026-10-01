@@ -193,6 +193,14 @@ pub struct Config {
     /// empty argument makes the CLI read the NEXT flag as the value.
     pub setting_sources: Option<Vec<String>>,
 
+    /// Glob patterns of file paths the session may never read. When non-empty,
+    /// `build_args` emits `--settings <json>` carrying a `PreToolUse` hook
+    /// (built by `permission_hook::settings_json`) that blocks `Read`/`Grep`/
+    /// `Glob` calls whose `file_path` matches any pattern; the CLI records the
+    /// block on `Outcome::permission_denials`. Empty (the default) omits the
+    /// flag, so every existing caller's argv is byte-identical.
+    pub denied_path_patterns: Vec<String>,
+
     /// Optional override for `execute()`'s whole-call timeout.
     ///
     /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
@@ -223,7 +231,8 @@ impl Config {
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
     /// `--resume <id>`, `--dangerously-skip-permissions`, `--permission-mode <mode>`,
-    /// `--json-schema <json>`, `--max-turns <n>`, `--setting-sources=<list>`, then
+    /// `--json-schema <json>`, `--max-turns <n>`, `--setting-sources=<list>`,
+    /// `--settings <json>` (only when `denied_path_patterns` is non-empty), then
     /// always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
@@ -287,6 +296,13 @@ impl Config {
 
         if let Some(setting_sources) = &self.setting_sources {
             args.push(format!("--setting-sources={}", setting_sources.join(",")));
+        }
+
+        if !self.denied_path_patterns.is_empty() {
+            args.push("--settings".to_string());
+            args.push(
+                crate::permission_hook::settings_json(&self.denied_path_patterns).to_string(),
+            );
         }
 
         args.push("--output-format".to_string());
@@ -560,6 +576,33 @@ mod tests {
             ..Config::default()
         };
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn denied_path_patterns_default_empty_and_omits_settings_flag() {
+        let config = Config::default();
+        assert!(config.denied_path_patterns.is_empty());
+        assert!(!config.build_args("hi").contains(&"--settings".to_string()));
+    }
+
+    #[test]
+    fn build_args_emits_one_settings_json_before_output_format() {
+        let patterns = vec!["*/.env".to_string()];
+        let config = Config {
+            setting_sources: Some(Vec::new()),
+            denied_path_patterns: patterns.clone(),
+            ..Config::default()
+        };
+        let args = config.build_args("hi");
+
+        assert_eq!(args.iter().filter(|a| *a == "--settings").count(), 1);
+        let idx = args.iter().position(|a| a == "--settings").unwrap();
+        assert_eq!(args[idx - 1], "--setting-sources=");
+        let parsed: serde_json::Value = serde_json::from_str(&args[idx + 1]).unwrap();
+        assert_eq!(parsed, crate::permission_hook::settings_json(&patterns));
+        assert_eq!(args[idx + 2], "--output-format");
+        assert_eq!(args[idx + 3], "json");
+        assert_eq!(args.len(), idx + 4);
     }
 
     #[test]
