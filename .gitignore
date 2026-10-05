@@ -26,7 +26,13 @@ __pycache__/
 # from an upstream template (see .claude/.harness-manifest.json), not authored
 # here, and they carry internal paths and vocabulary. Nothing in this crate's
 # source references them.
-/.claude/
+# Exception: .claude/workflows/agent-rules.md IS tracked. engine-rs (40e3ea92) appends it to
+# every SDLC stage prompt under context_profile minimal+rules, and a fresh git worktree only
+# has it if git tracks it (otherwise the stage silently falls back to full context).
+/.claude/*
+!/.claude/workflows/
+/.claude/workflows/*
+!/.claude/workflows/agent-rules.md
 /.agents/
 /hooks/
 /scripts/
