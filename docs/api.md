@@ -84,6 +84,7 @@ never appear in argv.
 | `permission_mode: Option<PermissionMode>` | `--permission-mode <mode>` — emitted only when `Some`, using `PermissionMode::as_cli_str`'s CLI spelling (`acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`); omitted entirely when `None` (default). Mutually exclusive with `dangerously_skip_permissions` — setting both raises `Error::ConflictingPermissions` from `Config::validate()`, which `execute()` calls first, before resolving the binary |
 | `json_schema: Option<serde_json::Value>` | `--json-schema <json>` — when `Some`, serialized to compact JSON and emitted immediately before the trailing `--output-format json` pair; omitted entirely when `None` (default) |
 | `max_turns: Option<u32>` | `--max-turns <n>` — emitted only when `Some`; omitted entirely when `None` (default) |
+| `max_budget_usd: Option<f64>` | `--max-budget-usd <n>` — emitted only when `Some`; omitted entirely when `None` (default). A call stopped at the ceiling returns `Error::MaxBudget(Box<Outcome>)` (envelope `subtype: error_max_budget_usd`), not `Error::Api`; the CLI checks between steps so billed cost can slightly exceed `n` |
 | `setting_sources: Option<Vec<String>>` | `--setting-sources=<list>` — always one `=`-joined token, sources comma-joined (e.g. `user,project`); emitted only when `Some`, omitted entirely when `None` (default). `Some(vec![])` emits `--setting-sources=` (load no settings layers, so no CLAUDE.md/AGENTS.md chain or project hooks) |
 | `denied_path_patterns: Vec<String>` | `--settings <json>` — when non-empty, emits one inline-JSON `PreToolUse` hook (matcher `Read\|Grep\|Glob`, built by `permission_hook::settings_json`) that blocks any call whose `tool_input.file_path` fnmatch-matches a pattern (e.g. `*/.env`); emitted right after `--setting-sources`, omitted entirely when empty (default). A block is recorded on `Outcome.permission_denials` |
 | `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
@@ -173,7 +174,7 @@ for provenance (the decision record behind it is internal, not published here).
 - `is_error: bool` — the only trustworthy failure signal. The envelope reports
   `subtype: "success"` even when the call failed, so `subtype` must never be used for this.
 - `subtype: Option<ResultSubtype>` — from `subtype`. `ResultSubtype` is a closed enum (`Success`,
-  `ErrorMaxTurns`, `ErrorDuringExecution`) plus a catch-all `Unknown(String)` for any value this
+  `ErrorMaxTurns`, `ErrorMaxBudgetUsd`, `ErrorDuringExecution`) plus a catch-all `Unknown(String)` for any value this
   crate does not yet recognise — the wire is a vendor contract this crate does not own, so an
   unrecognised subtype parses rather than failing.
 - `num_turns: Option<u32>` — from `num_turns`. Present on both envelopes; most useful alongside

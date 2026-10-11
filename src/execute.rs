@@ -61,6 +61,8 @@ fn resolve_binary() -> Result<PathBuf> {
 ///   prompt) — the message is on stderr.
 /// - [`Error::MaxTurns`] if the CLI reported `is_error` with `subtype: error_max_turns`
 ///   (the call ran out of turns).
+/// - [`Error::MaxBudget`] if the CLI reported `is_error` with `subtype: error_max_budget_usd`
+///   (the call hit `Config::max_budget_usd`).
 /// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
@@ -125,6 +127,10 @@ async fn run_once(
             return Err(Error::MaxTurns(Box::new(outcome)));
         }
 
+        if outcome.is_error && matches!(outcome.subtype, Some(ResultSubtype::ErrorMaxBudgetUsd)) {
+            return Err(Error::MaxBudget(Box::new(outcome)));
+        }
+
         if outcome.is_error {
             return Err(Error::Api {
                 status: outcome.api_error_status,
@@ -185,6 +191,8 @@ async fn run_once(
 ///   prompt) — the message is on stderr.
 /// - [`Error::MaxTurns`] if the CLI reported `is_error` with `subtype: error_max_turns`
 ///   (the call ran out of turns).
+/// - [`Error::MaxBudget`] if the CLI reported `is_error` with `subtype: error_max_budget_usd`
+///   (the call hit `Config::max_budget_usd`).
 /// - [`Error::Api`] if the CLI reported `is_error` (unroutable model, API outage) —
 ///   the message is in the envelope, not on stderr.
 /// - [`Error::Parse`] if stdout is not valid `Outcome` JSON.
@@ -529,6 +537,34 @@ mod tests {
                 assert!((outcome.cost_usd - 0.0213511).abs() < 1e-9);
             }
             other => panic!("expected Error::MaxTurns, got {other:?}"),
+        }
+    }
+
+    /// The budget-ceiling shape must be routed to `Error::MaxBudget`, never
+    /// `Error::Api`: a stub CLI emitting the real recorded
+    /// `error_max_budget_usd` envelope (no `result` key, exit 1) surfaces as a
+    /// typed error carrying the billed `session_id`/`total_cost_usd`.
+    #[cfg(unix)]
+    #[test]
+    fn error_max_budget_envelope_becomes_typed_max_budget_error() {
+        let fixture = include_str!("../tests/fixtures/error_max_budget_usd-2.1.296.json");
+        let escaped = fixture.replace('\'', "'\\''");
+        let (_dir, script_path) = write_fake_binary(&format!("printf '%s' '{escaped}'\nexit 1\n"));
+
+        let err = try_run_with_fake_binary(&script_path, &Config::default())
+            .expect_err("an error_max_budget_usd envelope must not surface as Ok");
+
+        match err {
+            Error::MaxBudget(outcome) => {
+                assert_eq!(outcome.subtype, Some(ResultSubtype::ErrorMaxBudgetUsd));
+                assert!(outcome.is_error);
+                assert!(outcome.cost_usd > 0.0);
+                assert_eq!(
+                    outcome.errors,
+                    vec!["Reached maximum budget ($0.0001)".to_string()]
+                );
+            }
+            other => panic!("expected Error::MaxBudget, got {other:?}"),
         }
     }
 

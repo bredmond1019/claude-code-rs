@@ -20,6 +20,7 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 | `cli-structured-2.1.214.json` | `claude` 2.1.214, 2026-07-18 | success with `--json-schema` (envelope: structured output) |
 | `cli-error-oauth-expired-2.1.270.json` | `claude` 2.1.270, 2026-09-13 | API error (`is_error: true`, HTTP 401, isolated call against a corrupted access token) |
 | `error_max_turns.json` | `claude` CLI, `--max-turns 1 --output-format json`, 2026-09-25, captured by the engine-rs lane | turn-limit stop (`is_error: true`, `subtype: error_max_turns`, no `result` key) |
+| `error_max_budget_usd-2.1.296.json` | `claude` 2.1.296, 2026-10-11, `-p ... --max-budget-usd 0.0001 --model haiku --setting-sources= --output-format json` (exit 1) | budget-ceiling stop (`is_error: true`, `subtype: error_max_budget_usd`, no `result` key; `session_id`/`uuid` redacted) |
 | `hook-pretooluse-stdin-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | not an envelope: the `PreToolUse` hook's stdin payload (`hook_event_name`, `tool_name`, `tool_input.file_path`, ...) |
 | `cli-result-permission-denial-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | success envelope whose `PreToolUse` hook blocked a `Read` (`permission_denials[]` populated) |
 

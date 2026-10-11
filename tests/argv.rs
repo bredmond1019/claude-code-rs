@@ -132,3 +132,29 @@ fn resume_without_continue_is_included_without_continue_flag() {
         .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn max_budget_usd_emits_flag_before_output_format_and_none_omits_it() {
+    let with = Config {
+        max_budget_usd: Some(1.5),
+        ..Config::default()
+    }
+    .build_args("hi");
+    assert_eq!(
+        with,
+        vec![
+            "-p",
+            "hi",
+            "--max-budget-usd",
+            "1.5",
+            "--output-format",
+            "json"
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>()
+    );
+
+    let without = Config::default().build_args("hi");
+    assert!(!without.iter().any(|a| a.contains("budget")));
+}

@@ -180,6 +180,17 @@ pub struct Config {
     /// applies (today's unbounded-turn behavior unchanged).
     pub max_turns: Option<u32>,
 
+    /// Optional per-call spend ceiling in USD (`--max-budget-usd <n>`). When
+    /// `Some(n)`, `build_args` emits `--max-budget-usd` followed by `n`; when
+    /// `None` (the default), the flag is omitted entirely and argv is
+    /// byte-identical to before this field existed.
+    ///
+    /// The CLI checks the ceiling between its own steps, so a call can
+    /// overshoot it slightly (the budget-stopped fixture billed 0.0015 against
+    /// a 0.001 ceiling). A call stopped at the ceiling surfaces as
+    /// [`crate::error::Error::MaxBudget`], not [`crate::error::Error::Api`].
+    pub max_budget_usd: Option<f64>,
+
     /// Optional list of setting sources the CLI loads (`--setting-sources=<list>`).
     ///
     /// Controls which settings layers (`user`, `project`, `local`) a call loads,
@@ -292,6 +303,11 @@ impl Config {
         if let Some(max_turns) = self.max_turns {
             args.push("--max-turns".to_string());
             args.push(max_turns.to_string());
+        }
+
+        if let Some(max_budget_usd) = self.max_budget_usd {
+            args.push("--max-budget-usd".to_string());
+            args.push(max_budget_usd.to_string());
         }
 
         if let Some(setting_sources) = &self.setting_sources {
@@ -437,6 +453,31 @@ mod tests {
             .position(|a| a == "--max-turns")
             .expect("--max-turns must be present");
         assert_eq!(args[idx + 1], "3");
+    }
+
+    #[test]
+    fn default_max_budget_usd_is_none_and_omits_flag() {
+        let config = Config::default();
+        assert!(config.max_budget_usd.is_none());
+        assert!(!config
+            .build_args("hi")
+            .contains(&"--max-budget-usd".to_string()));
+    }
+
+    #[test]
+    fn build_args_emits_max_budget_usd_when_set() {
+        let config = Config {
+            max_budget_usd: Some(1.5),
+            ..Config::default()
+        };
+        let args = config.build_args("hi");
+
+        assert_eq!(args.iter().filter(|a| *a == "--max-budget-usd").count(), 1);
+        let idx = args
+            .iter()
+            .position(|a| a == "--max-budget-usd")
+            .expect("--max-budget-usd must be present");
+        assert_eq!(args[idx + 1], "1.5");
     }
 
     #[test]

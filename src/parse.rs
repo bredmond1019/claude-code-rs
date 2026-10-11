@@ -230,6 +230,8 @@ pub enum ResultSubtype {
     Success,
     /// The call stopped because it hit its turn ceiling (CLI: `error_max_turns`).
     ErrorMaxTurns,
+    /// The call stopped because it hit its spend ceiling (CLI: `error_max_budget_usd`).
+    ErrorMaxBudgetUsd,
     /// The call failed during execution for a reason other than the turn ceiling.
     ErrorDuringExecution,
     /// A subtype value this crate does not yet recognise, carrying the raw wire string.
@@ -246,6 +248,7 @@ impl ResultSubtype {
         match self {
             Self::Success => "success",
             Self::ErrorMaxTurns => "error_max_turns",
+            Self::ErrorMaxBudgetUsd => "error_max_budget_usd",
             Self::ErrorDuringExecution => "error_during_execution",
             Self::Unknown(raw) => raw,
         }
@@ -257,6 +260,7 @@ impl From<String> for ResultSubtype {
         match raw.as_str() {
             "success" => Self::Success,
             "error_max_turns" => Self::ErrorMaxTurns,
+            "error_max_budget_usd" => Self::ErrorMaxBudgetUsd,
             "error_during_execution" => Self::ErrorDuringExecution,
             _ => Self::Unknown(raw),
         }

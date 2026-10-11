@@ -97,7 +97,9 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
   switch (default `false`) that routes the call through `IsolatedConfigDir`. Four further opt-ins, all
   inert at their defaults: `dangerously_skip_permissions: bool` (appends
   `--dangerously-skip-permissions`), `json_schema: Option<serde_json::Value>` (`--json-schema`),
-  `max_turns: Option<u32>` (`--max-turns <n>`, emitted only when `Some`), and
+  `max_turns: Option<u32>` (`--max-turns <n>`, emitted only when `Some`),
+  `max_budget_usd: Option<f64>` (`--max-budget-usd <n>`, emitted only when `Some`; a budget stop is
+  `Error::MaxBudget`), and
   `timeout: Option<Duration>` (Rust-side only, never argv). Also `permission_mode:
   Option<PermissionMode>` (`--permission-mode <mode>`, emitted only when `Some`) — mutually
   exclusive with `dangerously_skip_permissions`: setting both raises `Error::ConflictingPermissions`

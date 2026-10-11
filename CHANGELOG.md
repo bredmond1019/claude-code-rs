@@ -16,6 +16,12 @@ All notable changes to this crate are documented here.
 
 ### Added
 
+- `Config::max_budget_usd: Option<f64>` emitting `--max-budget-usd <n>` from `build_args` when set
+  (`None` omits the flag; argv unchanged for existing callers), a new `ResultSubtype::ErrorMaxBudgetUsd`
+  variant and a new `Error::MaxBudget(Box<Outcome>)` for a call stopped at its ceiling
+  (`is_error: true`, `subtype: error_max_budget_usd`), distinct from `Error::Api`. The CLI exits 1 and
+  may bill slightly past the ceiling. Source-breaking for struct-literal `Config` and exhaustive
+  matches over `Error`/`ResultSubtype`; folds into the pending 3.0.0 major bump (no new finding).
 - `Config::permission_mode: Option<PermissionMode>`: a new closed `PermissionMode` enum
   (`AcceptEdits`, `Auto`, `BypassPermissions`, `Manual`, `DontAsk`, `Plan`) emitting
   `--permission-mode <mode>` from `build_args` when set; `None` omits the flag (unchanged

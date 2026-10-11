@@ -80,6 +80,17 @@ pub enum Error {
     #[error("claude call hit its turn ceiling ({:?} turns, subtype {:?})", .0.num_turns, .0.subtype)]
     MaxTurns(Box<Outcome>),
 
+    /// The CLI ran, reached the API, and stopped only because it hit its
+    /// configured spend ceiling (`is_error: true`, `subtype:
+    /// error_max_budget_usd`; set via `Config::max_budget_usd`).
+    ///
+    /// Distinct from [`Error::Api`] for the same reason as
+    /// [`Error::MaxTurns`], and boxed whole for the same reason: the billed
+    /// envelope's `cost_usd`, `usage` and `session_id` stay together. The CLI
+    /// may bill slightly past the ceiling, so `cost_usd` can exceed it.
+    #[error("claude call hit its budget ceiling (cost ${:.4}, subtype {:?})", .0.cost_usd, .0.subtype)]
+    MaxBudget(Box<Outcome>),
+
     /// Setting up an isolated `CLAUDE_CONFIG_DIR` (temp dir creation, or a
     /// credentials/`.claude.json` source that exists but could not be read
     /// or copied) failed.
