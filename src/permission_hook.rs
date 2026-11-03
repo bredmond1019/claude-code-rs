@@ -16,14 +16,21 @@ const DENY_REASON: &str = "denied: secret-shaped path";
 
 /// Build the `--settings` JSON value embedding `patterns` into a `PreToolUse` deny hook.
 ///
+/// An empty `patterns` yields a well-formed object whose hook never blocks; the caller decides
+/// whether to emit it at all. `settings::cli_settings` composes [`hook_entry`] with any other
+/// settings; this wrapper is the deny-only shape it must reproduce byte-for-byte.
+#[cfg(test)]
+pub(crate) fn settings_json(patterns: &[String]) -> Value {
+    json!({ "hooks": { "PreToolUse": [hook_entry(patterns)] } })
+}
+
+/// One `PreToolUse` entry denying `patterns`.
+///
 /// The hook command is a `python3 -c` one-liner that reads the hook's stdin JSON, fnmatch-tests
 /// `tool_input.file_path` against `patterns`, and prints a block decision on a match or `{}`
 /// otherwise. Each pattern is rendered with Rust's `{:?}` into a Python string literal, which
-/// escapes quotes and backslashes compatibly. An empty `patterns` yields a well-formed object whose
-/// hook never blocks; the caller decides whether to emit it at all.
-// Consumed by `Config::build_args` in the next task; unused in non-test builds until then.
-#[allow(dead_code)]
-pub(crate) fn settings_json(patterns: &[String]) -> Value {
+/// escapes quotes and backslashes compatibly.
+pub(crate) fn hook_entry(patterns: &[String]) -> Value {
     let literals = patterns
         .iter()
         .map(|p| format!("{p:?}"))
@@ -37,12 +44,8 @@ pub(crate) fn settings_json(patterns: &[String]) -> Value {
          if any(fnmatch.fnmatch(p,x) for x in pats) else \"{{}}\")'"
     );
     json!({
-        "hooks": {
-            "PreToolUse": [{
-                "matcher": MATCHER,
-                "hooks": [{ "type": "command", "command": command }]
-            }]
-        }
+        "matcher": MATCHER,
+        "hooks": [{ "type": "command", "command": command }]
     })
 }
 

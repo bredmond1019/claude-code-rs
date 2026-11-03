@@ -212,6 +212,26 @@ pub struct Config {
     /// flag, so every existing caller's argv is byte-identical.
     pub denied_path_patterns: Vec<String>,
 
+    /// Opt-in Anthropic-compatible endpoint (e.g. a local Ollama daemon). `None` (the default)
+    /// changes nothing. When set, the spawned `claude` gets `ANTHROPIC_BASE_URL`, a placeholder
+    /// `ANTHROPIC_AUTH_TOKEN`, every model-selection variable pinned to `endpoint.model`, and
+    /// `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`; `ANTHROPIC_API_KEY` is removed. `build_args`
+    /// passes `--model <endpoint.model>` (taking precedence over [`Config::model`]) and repeats
+    /// the variables in the inline `--settings` `env` block, so a `settings.json` in `cwd` cannot
+    /// re-point the call. Under [`Config::isolated`] the isolated config dir carries no
+    /// credentials and the heal retry is skipped. See the `endpoint` module for the variable table.
+    pub endpoint: Option<crate::endpoint::Endpoint>,
+
+    /// Opt-in allow-root confinement. `None` (the default) changes nothing. When set, a
+    /// fail-closed `PreToolUse` hook (in the same `--settings` object as
+    /// [`Config::denied_path_patterns`]) blocks `Read`/`Grep`/`Glob`/`Edit`/`Write`/`MultiEdit`/
+    /// `NotebookEdit` calls whose `file_path`/`path`/`notebook_path` is missing where required or
+    /// resolves (after realpath) outside this root, and `build_args` appends
+    /// `--disallowedTools` for `WebFetch`, `WebSearch`, `Task` and `Agent`. `Bash` is left as the
+    /// caller configures it. A relative root resolves against [`Config::cwd`]. See the `confine`
+    /// module.
+    pub confine_to: Option<std::path::PathBuf>,
+
     /// Optional override for `execute()`'s whole-call timeout.
     ///
     /// This is **not** a CLI flag — it never appears in [`Config::build_args`]
@@ -243,8 +263,8 @@ impl Config {
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
     /// `--resume <id>`, `--dangerously-skip-permissions`, `--permission-mode <mode>`,
     /// `--json-schema <json>`, `--max-turns <n>`, `--setting-sources=<list>`,
-    /// `--settings <json>` (only when `denied_path_patterns` is non-empty), then
-    /// always `--output-format json`.
+    /// `--settings <json>` (only when `denied_path_patterns`, `confine_to` or `endpoint`
+    /// is set), then always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -262,7 +282,12 @@ impl Config {
             args.push(append_system_prompt.clone());
         }
 
-        if let Some(model) = &self.model {
+        let model = self
+            .endpoint
+            .as_ref()
+            .map(|endpoint| &endpoint.model)
+            .or(self.model.as_ref());
+        if let Some(model) = model {
             args.push("--model".to_string());
             args.push(model.clone());
         }
@@ -272,9 +297,9 @@ impl Config {
             args.push(tool.clone());
         }
 
-        for tool in &self.disallowed_tools {
+        for tool in self.effective_disallowed_tools() {
             args.push("--disallowedTools".to_string());
-            args.push(tool.clone());
+            args.push(tool);
         }
 
         if self.continue_session {
@@ -314,17 +339,29 @@ impl Config {
             args.push(format!("--setting-sources={}", setting_sources.join(",")));
         }
 
-        if !self.denied_path_patterns.is_empty() {
+        if let Some(settings) = crate::settings::cli_settings(self) {
             args.push("--settings".to_string());
-            args.push(
-                crate::permission_hook::settings_json(&self.denied_path_patterns).to_string(),
-            );
+            args.push(settings.to_string());
         }
 
         args.push("--output-format".to_string());
         args.push("json".to_string());
 
         args
+    }
+
+    /// The caller's `disallowed_tools`, followed by any [`crate::confine::CONFINE_DISALLOWED_TOOLS`]
+    /// entry not already listed when `confine_to` is set.
+    fn effective_disallowed_tools(&self) -> Vec<String> {
+        let mut tools = self.disallowed_tools.clone();
+        if self.confine_to.is_some() {
+            for tool in crate::confine::CONFINE_DISALLOWED_TOOLS {
+                if !tools.iter().any(|t| t == tool) {
+                    tools.push((*tool).to_string());
+                }
+            }
+        }
+        tools
     }
 
     /// Checks for conflicting settings that `build_args` cannot express

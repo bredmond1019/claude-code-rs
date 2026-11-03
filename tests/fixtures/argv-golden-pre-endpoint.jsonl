@@ -1,0 +1,2 @@
+["-p","hi","--setting-sources=","--settings","{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"command\":\"python3 -c 'import sys,json,fnmatch; d=json.load(sys.stdin); p=(d.get(\\\"tool_input\\\") or {}).get(\\\"file_path\\\") or \\\"\\\"; pats=[\\\"*/.env\\\",\\\"a\\\\\\\"b\\\"]; print(json.dumps({\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"denied: secret-shaped path\\\"}) if any(fnmatch.fnmatch(p,x) for x in pats) else \\\"{}\\\")'\",\"type\":\"command\"}],\"matcher\":\"Read|Grep|Glob\"}]}}","--output-format","json"]
+["-p","hi","--output-format","json"]

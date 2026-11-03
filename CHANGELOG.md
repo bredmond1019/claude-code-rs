@@ -16,6 +16,20 @@ All notable changes to this crate are documented here.
 
 ### Added
 
+- `Config::endpoint: Option<Endpoint>` (new `endpoint` module; `Endpoint { base_url, model,
+  auth_token }`, re-exported at the crate root): points the spawned `claude` at an
+  Anthropic-compatible server such as Ollama. Sets `ANTHROPIC_BASE_URL`, a placeholder
+  `ANTHROPIC_AUTH_TOKEN`, every model-selection variable (`endpoint::MODEL_ENV_VARS`, read from CLI
+  2.1.317) to the one tag, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `--model`; removes
+  `ANTHROPIC_API_KEY`; mirrors the variables into the inline `--settings` `env` block. Under
+  `isolated` the temp config dir carries no credentials (new `IsolatedConfigDir::without_credentials`)
+  and the heal retry is skipped.
+- `Config::confine_to: Option<PathBuf>` (new `confine` module): a fail-closed allow-root
+  `PreToolUse` hook over Read/Grep/Glob/Edit/Write/MultiEdit/NotebookEdit path inputs, plus
+  `--disallowedTools` for WebFetch/WebSearch/Task/Agent. Composes with `denied_path_patterns`;
+  all `--settings` contributors now merge into one object (new `settings` module). Defaults keep
+  argv byte-identical (golden test `tests/fixtures/argv-golden-pre-endpoint.jsonl`).
+  Source-breaking for struct-literal `Config`; folds into the pending 3.0.0 major bump.
 - `Config::max_budget_usd: Option<f64>` emitting `--max-budget-usd <n>` from `build_args` when set
   (`None` omits the flag; argv unchanged for existing callers), a new `ResultSubtype::ErrorMaxBudgetUsd`
   variant and a new `Error::MaxBudget(Box<Outcome>)` for a call stopped at its ceiling

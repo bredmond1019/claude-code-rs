@@ -3,13 +3,17 @@
 mod error;
 mod heal;
 mod permission_hook;
+mod settings;
 
 pub mod config;
+pub mod confine;
+pub mod endpoint;
 pub mod execute;
 pub mod isolation;
 pub mod parse;
 
 pub use config::{Config, ParsePermissionModeError, PermissionMode};
+pub use endpoint::Endpoint;
 pub use error::{Error, Result};
 pub use execute::execute;
 pub use isolation::IsolatedConfigDir;

@@ -135,6 +135,22 @@ impl IsolatedConfigDir {
         Self::spawn_blocking_build(move || Self::new_with(read_keychain, read_file)).await
     }
 
+    /// Build an isolated config dir that carries **no credentials at all** — only a copy of
+    /// `~/.claude.json` when present. For calls routed to a non-Anthropic endpoint
+    /// (`Config::endpoint`): with no OAuth token in the dir, a call that somehow lost its base URL
+    /// fails to authenticate instead of billing the operator's subscription.
+    ///
+    /// Never touches the Keychain, so unlike [`IsolatedConfigDir::new`] it does not block on
+    /// `securityd` and is safe to call from an async task.
+    ///
+    /// # Errors
+    /// Returns [`Error::Isolation`] if the temp directory cannot be created or `~/.claude.json`
+    /// exists but cannot be copied.
+    pub fn without_credentials() -> Result<Self> {
+        let claude_json_src = home_dir().map(|home| home.join(".claude.json"));
+        Self::build(None, None, claude_json_src.as_deref())
+    }
+
     /// Test/injection seam: build an isolated config dir from an explicit
     /// credentials JSON string and an explicit `.claude.json` source path,
     /// bypassing the Keychain and `~/.claude/` entirely.

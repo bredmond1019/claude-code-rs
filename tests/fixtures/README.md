@@ -23,6 +23,7 @@ is tested against. Nothing here is hand-written, and nothing here may be hand-ed
 | `error_max_budget_usd-2.1.296.json` | `claude` 2.1.296, 2026-10-11, `-p ... --max-budget-usd 0.0001 --model haiku --setting-sources= --output-format json` (exit 1) | budget-ceiling stop (`is_error: true`, `subtype: error_max_budget_usd`, no `result` key; `session_id`/`uuid` redacted) |
 | `hook-pretooluse-stdin-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | not an envelope: the `PreToolUse` hook's stdin payload (`hook_event_name`, `tool_name`, `tool_input.file_path`, ...) |
 | `cli-result-permission-denial-2.1.273.json` | `claude` 2.1.273, 2026-09-15 | success envelope whose `PreToolUse` hook blocked a `Read` (`permission_denials[]` populated) |
+| `argv-golden-pre-endpoint.jsonl` | `Config::build_args("hi")` at commit 73dab34, 2026-11-03 | not an envelope: two argv arrays (deny-only + `setting_sources: Some([])`, then `Config::default()`) that `tests/endpoint.rs` holds today's argv byte-identical to |
 
 The two 2.1.273 fixtures were captured live by running `claude -p "<read the .env file>"
 --output-format json --settings '<PreToolUse hook JSON>'` in a temp dir holding a `.env`, with a

@@ -88,6 +88,15 @@ async fn run_once(
             command.envs(config.env.iter().map(|(k, v)| (k, v)));
         }
 
+        // After `config.env`, so the endpoint's variables win over a caller override and a
+        // caller-supplied `ANTHROPIC_API_KEY` is still removed.
+        if let Some(endpoint) = &config.endpoint {
+            command.envs(endpoint.env_vars());
+            for name in crate::endpoint::REMOVED_ENV_VARS {
+                command.env_remove(name);
+            }
+        }
+
         if let Some(dir) = config_dir {
             command.env("CLAUDE_CONFIG_DIR", dir);
         }
@@ -147,6 +156,16 @@ async fn run_once(
     match tokio::time::timeout(effective_timeout(config), call).await {
         Ok(result) => result,
         Err(_elapsed) => Err(Error::Timeout),
+    }
+}
+
+/// The isolated config dir for `config`: credential-free when an endpoint is set, else the
+/// redacted-credential snapshot.
+async fn build_isolated_dir(config: &Config) -> Result<IsolatedConfigDir> {
+    if config.endpoint.is_some() {
+        IsolatedConfigDir::without_credentials()
+    } else {
+        IsolatedConfigDir::new_async().await
     }
 }
 
@@ -211,7 +230,7 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
     // concurrent `execute()` has been observed hitting `Error::Timeout` from
     // this starvation alone, without ever spawning its subprocess.
     let isolation_guard = if config.isolated {
-        Some(IsolatedConfigDir::new_async().await?)
+        Some(build_isolated_dir(config).await?)
     } else {
         None
     };
@@ -229,8 +248,10 @@ pub async fn execute(config: &Config, prompt: &str) -> Result<Outcome> {
     // make the "outlives the child" contract explicit.
     drop(isolation_guard);
 
+    // Never with an endpoint: the heal spawns a real `claude` against Anthropic.
     let should_heal_and_retry = config.isolated
         && config.heal_isolated_auth_on_expiry
+        && config.endpoint.is_none()
         && matches!(&result, Err(e) if heal::is_isolated_auth_expired(e));
 
     if !should_heal_and_retry {
