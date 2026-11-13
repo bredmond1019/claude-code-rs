@@ -16,6 +16,10 @@ All notable changes to this crate are documented here.
 
 ### Added
 
+- `Config::group_kill_grace: Option<Duration>` (default `None`, resolving to a built-in 5s via
+  `effective_group_kill_grace`): the grace period between the polite signal and the forced kill when
+  a timed-out `claude` process group is torn down. Not a CLI flag. Adds a `libc` dependency for Unix
+  signal sending.
 - `Config::endpoint: Option<Endpoint>` (new `endpoint` module; `Endpoint { base_url, model,
   auth_token }`, re-exported at the crate root): points the spawned `claude` at an
   Anthropic-compatible server such as Ollama. Sets `ANTHROPIC_BASE_URL`, a placeholder

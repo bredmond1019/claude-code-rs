@@ -254,6 +254,14 @@ pub struct Config {
     /// `DEFAULT_HEAL_TIMEOUT` (15 seconds); `Some(duration)` overrides it.
     /// Mirrors [`Config::timeout`]'s `None`-means-built-in-default shape.
     pub heal_timeout: Option<Duration>,
+
+    /// Optional override for the grace period between the polite signal and the forced kill
+    /// when a timed-out `claude` process group is torn down.
+    ///
+    /// This is **not** a CLI flag — it never appears in [`Config::build_args`] output. `None`
+    /// (the `#[derive(Default)]` value) uses the built-in `DEFAULT_GROUP_KILL_GRACE` of 5
+    /// seconds; `Some(duration)` overrides it.
+    pub group_kill_grace: Option<Duration>,
 }
 
 impl Config {

@@ -92,6 +92,7 @@ never appear in argv.
 | `timeout: Option<Duration>` | overrides `execute()`'s whole-call `tokio::time::timeout`; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_TIMEOUT` of 300s, so existing callers are unaffected; `Some(duration)` widens or narrows it for that call |
 | `heal_isolated_auth_on_expiry: bool` | when `true` (default `false`), an isolated call that fails with the exact shape of an expired/invalid credential snapshot triggers a best-effort heal-and-retry-once — see [Heal-and-retry](#heal-and-retry); not a CLI flag |
 | `heal_timeout: Option<Duration>` | overrides the whole-call timeout applied to the heal attempt; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_HEAL_TIMEOUT` of 15s; `Some(duration)` overrides it. Mirrors `timeout`'s shape |
+| `group_kill_grace: Option<Duration>` | grace period between the polite signal and the forced kill when a timed-out `claude` process group is torn down; not a CLI flag (never appears in `build_args`). `None` (default) keeps the built-in `DEFAULT_GROUP_KILL_GRACE` of 5s; `Some(duration)` overrides it, resolved via `effective_group_kill_grace` |
 
 `Config::build_args(&self, prompt: &str) -> Vec<String>` builds the exact argv: `-p <prompt>`, then
 the flags above in field order, always ending with `--output-format json`. `cwd`, `env`,
