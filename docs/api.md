@@ -51,7 +51,9 @@ gives back.
   temp dir). Spawns the process with `config.build_args(prompt)` (env otherwise inherited from the
   current process), captures stdout, and wraps the whole call in one `tokio::time::timeout` (not
   per-line) whose duration is `config.timeout` when set, else the built-in `DEFAULT_TIMEOUT` of
-  300s, killing the child on drop/timeout. Errors: `Error::BinaryNotFound`,
+  300s. The child runs in its own process group (`src/process_group.rs`, `GroupKillGuard`); on
+  timeout or drop the whole group is signalled, then force-killed after `group_kill_grace`, so
+  grandchildren do not leak. Errors: `Error::BinaryNotFound`,
   `Error::Spawn`, `Error::Timeout`, `Error::Parse`, `Error::Isolation`.
   When `config.isolated && config.heal_isolated_auth_on_expiry` and that call fails with the exact
   shape of an expired/invalid isolated credential snapshot, `execute()` makes one best-effort attempt
