@@ -56,7 +56,22 @@ pub(crate) async fn heal_shared_credentials(binary: &Path, timeout: Duration) ->
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let call = async { command.output().await.map_err(Error::Spawn) };
+    command.process_group(0);
+
+    let call = async {
+        let child: tokio::process::Child = command.spawn().map_err(Error::Spawn)?;
+        let mut group = child.id().map(|pid| {
+            crate::process_group::GroupKillGuard::new(
+                pid,
+                crate::process_group::DEFAULT_GROUP_KILL_GRACE,
+            )
+        });
+        let output = child.wait_with_output().await.map_err(Error::Spawn)?;
+        if let Some(group) = group.as_mut() {
+            group.disarm();
+        }
+        Ok::<_, Error>(output)
+    };
 
     match tokio::time::timeout(timeout, call).await {
         Ok(Ok(_output)) => Ok(()),

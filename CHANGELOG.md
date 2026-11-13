@@ -13,9 +13,22 @@ All notable changes to this crate are documented here.
   calls could starve the runtime — observed in a downstream consumer on 2026-09-02, where one call returned
   `Error::Timeout` against a 120s budget without ever spawning its subprocess. The construction now
   runs on tokio's blocking pool.
+- **A timeout (or a dropped call future) now kills the whole `claude` process group.** `run_once`
+  and the heal spawn start the CLI in its own process group (`process_group(0)`) and hold a
+  `GroupKillGuard`: on timeout or cancellation the group gets SIGTERM, then SIGKILL after
+  `Config::group_kill_grace`, so background children of the CLI no longer outlive the call. Normal
+  completion disarms the guard and output is unchanged. Consumers must bump their claude-code-rs pin
+  to pick this up. Consumer-side edge, not gated by this repo: engine-rs must bump its pin
+  (`fleet_pins.py check-consumers` passes) and extend
+  `crates/engine-core/tests/it/agent_timeout_reaps_child.rs` with the grandchild case; evidence is
+  the `fleet-pins.toml` diff plus the engine-rs commit adding the grandchild test.
 
 ### Added
 
+- `Config::group_kill_grace: Option<Duration>` (default `None`, resolving to a built-in 5s via
+  `effective_group_kill_grace`): the grace period between the polite signal and the forced kill when
+  a timed-out `claude` process group is torn down. Not a CLI flag. Adds a `libc` dependency for Unix
+  signal sending.
 - `Config::endpoint: Option<Endpoint>` (new `endpoint` module; `Endpoint { base_url, model,
   auth_token }`, re-exported at the crate root): points the spawned `claude` at an
   Anthropic-compatible server such as Ollama. Sets `ANTHROPIC_BASE_URL`, a placeholder

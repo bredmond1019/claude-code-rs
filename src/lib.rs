@@ -3,6 +3,7 @@
 mod error;
 mod heal;
 mod permission_hook;
+mod process_group;
 mod settings;
 
 pub mod config;

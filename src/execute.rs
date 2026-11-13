@@ -101,7 +101,18 @@ async fn run_once(
             command.env("CLAUDE_CONFIG_DIR", dir);
         }
 
-        let output = command.output().await.map_err(Error::Spawn)?;
+        command.stdin(Stdio::null()).process_group(0);
+        let child = command.spawn().map_err(Error::Spawn)?;
+        let mut group = child.id().map(|pid| {
+            crate::process_group::GroupKillGuard::new(
+                pid,
+                crate::process_group::effective_group_kill_grace(config),
+            )
+        });
+        let output = child.wait_with_output().await.map_err(Error::Spawn)?;
+        if let Some(group) = group.as_mut() {
+            group.disarm();
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
