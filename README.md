@@ -101,7 +101,7 @@ flowchart TD
 | `timeout: Option<Duration>` | overrides the 300s default whole-call timeout; Rust-side only, never appears in argv |
 
 Full field docs, including exact argv ordering: [docs.rs](https://docs.rs/claude-sdk-rs/latest/claude_sdk_rs/struct.Config.html)
-and [`docs/api.md`](docs/api.md).
+and [`docs/reference/api.md`](docs/reference/api.md).
 
 **Credential isolation.** Interactive `claude` sessions and SDK-driven subprocess calls share the
 same credentials file by default. If a subprocess call refreshes its OAuth token mid-flight, the
@@ -109,7 +109,7 @@ single-use refresh token is consumed server-side and your interactive session ge
 out. Set `Config { isolated: true, .. }` to run that call under a throwaway `CLAUDE_CONFIG_DIR`
 with a redacted credentials copy instead — see
 [`IsolatedConfigDir`](https://docs.rs/claude-sdk-rs/latest/claude_sdk_rs/struct.IsolatedConfigDir.html)
-and [`docs/architecture.md`](docs/architecture.md).
+and [`docs/concepts/architecture.md`](docs/concepts/architecture.md).
 
 **Platform note:** the built-in credential isolation sources credentials via the macOS Keychain
 with a file fallback. It has only been exercised on macOS; other platforms may need the
@@ -162,8 +162,8 @@ cargo test -- --ignored  # + the live canary that diffs a real `claude` response
 ## See also
 
 - [`docs/index.md`](docs/index.md) — documentation index
-- [`docs/architecture.md`](docs/architecture.md) — module map, core types, data flow
-- [`docs/api.md`](docs/api.md) — full public API surface and the downstream consumer contract
+- [`docs/concepts/architecture.md`](docs/concepts/architecture.md) — module map, core types, data flow
+- [`docs/reference/api.md`](docs/reference/api.md) — full public API surface and the downstream consumer contract
 - [`tests/fixtures/README.md`](tests/fixtures/README.md) — CLI response fixture provenance and re-capture steps
 - [`CHANGELOG.md`](./CHANGELOG.md) — what changed in 2.0.0 and why
 - [docs.rs/claude-sdk-rs](https://docs.rs/claude-sdk-rs) — generated API reference

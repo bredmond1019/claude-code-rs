@@ -1,5 +1,5 @@
 //! Doc-parity guard: every public field of `Config` in `src/config.rs` must be
-//! documented (in backticks) in `docs/api.md`. Catches a new field landing
+//! documented (in backticks) in `docs/reference/api.md`. Catches a new field landing
 //! without its row in the Config table.
 
 use std::path::Path;
@@ -31,7 +31,8 @@ fn config_fields(src: &str) -> Vec<String> {
 fn every_config_field_is_documented_in_api_md() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let src = std::fs::read_to_string(root.join("src/config.rs")).expect("read src/config.rs");
-    let doc = std::fs::read_to_string(root.join("docs/api.md")).expect("read docs/api.md");
+    let doc = std::fs::read_to_string(root.join("docs/reference/api.md"))
+        .expect("read docs/reference/api.md");
 
     let fields = config_fields(&src);
     // Positive control: the parser must actually find fields, or an empty
@@ -47,6 +48,6 @@ fn every_config_field_is_documented_in_api_md() {
         .collect();
     assert!(
         missing.is_empty(),
-        "Config fields missing from docs/api.md (expected in backticks): {missing:?}"
+        "Config fields missing from docs/reference/api.md (expected in backticks): {missing:?}"
     );
 }

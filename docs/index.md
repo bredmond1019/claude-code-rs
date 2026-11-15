@@ -7,7 +7,7 @@ layer: [meta]
 project: claude-code-rs
 status: active
 keywords: [documentation, index, capability-catalogue, api-surface, navigation]
-related: [api, architecture]
+related: [api, architecture, claude-code-rs-concepts-index, claude-code-rs-reference-index]
 ---
 
 # claude-code-rs — Documentation Index
@@ -32,22 +32,24 @@ doc is the authority.
 
 | What you can do | Public item | Where it's documented |
 |---|---|---|
-| Run one prompt through the `claude` CLI and get a typed result | `execute(&Config, &str)` (`src/execute.rs`) | [api.md](api.md#public-functions) |
-| Describe a single call — model, tools, system prompt, cwd, timeout | `Config` (`src/config.rs`) | [api.md](api.md#config) |
-| See the exact argv a `Config` produces, without running anything | `Config::build_args(prompt)` | [api.md](api.md#config) |
-| Read the reply, its cost, and its token usage | `Outcome` (`src/parse.rs`) | [api.md](api.md#outcome) |
-| Ask which model actually served the call | `Outcome::primary_model()` | [api.md](api.md#outcome) |
-| Parse a raw CLI JSON response you captured yourself | `parse::parse_result(json)` | [api.md](api.md#outcome) |
-| Stop a background call from logging out your interactive `claude` session | `Config { isolated: true }` / `IsolatedConfigDir` (`src/isolation.rs`) | [api.md](api.md#isolatedconfigdir) |
-| Build that isolated config dir yourself from an async context, without blocking a worker thread | `IsolatedConfigDir::new_async()` (`src/isolation.rs`) | [api.md](api.md#isolatedconfigdir) |
-| Tell apart a CLI failure from an API failure from a timeout | `Error` / `Result` (`src/error.rs`) | [architecture.md](architecture.md#core-types) |
+| Run one prompt through the `claude` CLI and get a typed result | `execute(&Config, &str)` (`src/execute.rs`) | [api.md](reference/api.md#public-functions) |
+| Describe a single call — model, tools, system prompt, cwd, timeout | `Config` (`src/config.rs`) | [api.md](reference/api.md#config) |
+| See the exact argv a `Config` produces, without running anything | `Config::build_args(prompt)` | [api.md](reference/api.md#config) |
+| Read the reply, its cost, and its token usage | `Outcome` (`src/parse.rs`) | [api.md](reference/api.md#outcome) |
+| Ask which model actually served the call | `Outcome::primary_model()` | [api.md](reference/api.md#outcome) |
+| Parse a raw CLI JSON response you captured yourself | `parse::parse_result(json)` | [api.md](reference/api.md#outcome) |
+| Stop a background call from logging out your interactive `claude` session | `Config { isolated: true }` / `IsolatedConfigDir` (`src/isolation.rs`) | [api.md](reference/api.md#isolatedconfigdir) |
+| Build that isolated config dir yourself from an async context, without blocking a worker thread | `IsolatedConfigDir::new_async()` (`src/isolation.rs`) | [api.md](reference/api.md#isolatedconfigdir) |
+| Tell apart a CLI failure from an API failure from a timeout | `Error` / `Result` (`src/error.rs`) | [architecture.md](concepts/architecture.md#core-types) |
 
 ## Reference docs
 
+Folders: [concepts/](concepts/index.md) · [reference/](reference/index.md).
+
 | Doc | What it covers |
 |---|---|
-| [architecture.md](architecture.md) | How a call flows through the crate; module map; core types; failure routing |
-| [api.md](api.md) | Field-by-field public surface and the downstream consumer contract |
+| [concepts/architecture.md](concepts/architecture.md) | How a call flows through the crate; module map; core types; failure routing |
+| [reference/api.md](reference/api.md) | Field-by-field public surface and the downstream consumer contract |
 | [`tests/fixtures/README.md`](../tests/fixtures/README.md) | Provenance of the captured CLI responses — the authority for `Outcome`'s shape |
 | [`CHANGELOG.md`](../CHANGELOG.md) | What changed in 2.0.0 and why |
 

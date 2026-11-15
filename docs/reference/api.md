@@ -14,8 +14,8 @@ related: [architecture]
 
 The complete public surface, field by field. This crate is a **library** — there is no binary or
 CLI of its own, so this page takes the place of the usual `cli.md`. If you want to get something
-running rather than look a field up, start at the repo [`README.md`](../README.md); if you want to
-know how a call flows, read [architecture.md](architecture.md).
+running rather than look a field up, start at the repo [`README.md`](../../README.md); if you want to
+know how a call flows, read [architecture.md](../concepts/architecture.md).
 
 ## Quickstart
 
@@ -163,7 +163,7 @@ model served it.
 
 `Outcome` (`src/parse.rs`) mirrors the CLI's `--output-format json` envelope. **The authority for
 this shape is `tests/fixtures/` — real captured responses — not this page.** If the two disagree,
-the fixtures are right and this page is stale. See [`tests/fixtures/README.md`](../tests/fixtures/README.md)
+the fixtures are right and this page is stale. See [`tests/fixtures/README.md`](../../tests/fixtures/README.md)
 for provenance (the decision record behind it is internal, not published here).
 
 - `cost_usd: f64` — from `total_cost_usd`.

@@ -13,8 +13,8 @@ related: [api]
 # claude-code-rs — Architecture
 
 This page explains **how one call travels through the crate** — which module does what, and where
-a failure comes from. For the field-by-field public surface, read [api.md](api.md); to just get
-something running, read the repo [`README.md`](../README.md).
+a failure comes from. For the field-by-field public surface, read [api.md](../reference/api.md); to just get
+something running, read the repo [`README.md`](../../README.md).
 
 ## What this page is for
 
@@ -46,7 +46,7 @@ flowchart TD
 
 In sentences, for the same thing:
 
-1. You build a [`Config`](api.md#config) describing one call.
+1. You build a [`Config`](../reference/api.md#config) describing one call.
 2. If `Config::isolated` is `true`, `execute()` builds an [`IsolatedConfigDir`](#core-types)
    **before** spawning anything, so a credential problem surfaces without burning a call. That
    build reads the macOS Keychain and blocks, so it runs on tokio's blocking pool
@@ -55,7 +55,7 @@ In sentences, for the same thing:
 3. `execute()` resolves the `claude` binary, spawns it with `Config::build_args(prompt)`, and wraps
    the whole thing in a single timeout.
 4. An empty stdout means the CLI itself failed; a parsed envelope with `is_error: true` means the
-   API call failed. Otherwise you get an [`Outcome`](api.md#outcome).
+   API call failed. Otherwise you get an [`Outcome`](../reference/api.md#outcome).
 
 **The only step you perform is step 1.** The rest is `execute()`.
 
@@ -82,7 +82,7 @@ child process (`CC.1.B`).
 ## Core Types
 
 Everything a caller touches. All six are re-exported from `lib.rs`, so `use claude_sdk_rs::X`
-works for each. Field-by-field detail lives in [api.md](api.md); this list is the orientation.
+works for each. Field-by-field detail lives in [api.md](../reference/api.md); this list is the orientation.
 
 - **`Error`** (`src/error.rs`) — crate-level error enum via `thiserror::Error`, covering
   `BinaryNotFound`, `Spawn(std::io::Error)`, `Timeout`, `Parse(serde_json::Error)`,
@@ -105,7 +105,7 @@ works for each. Field-by-field detail lives in [api.md](api.md); this list is th
   exclusive with `dangerously_skip_permissions`: setting both raises `Error::ConflictingPermissions`
   from `Config::validate()`, which `execute()` now calls first. `build_args(prompt)`
   builds the exact argv (always appending `--output-format json`). Re-exported from `lib.rs`.
-  Full field-by-field table: [`api.md`](api.md).
+  Full field-by-field table: [`api.md`](../reference/api.md).
 - **`IsolatedConfigDir`** (`src/isolation.rs`) — RAII guard that builds a throwaway
   `CLAUDE_CONFIG_DIR` containing a `refreshToken`-redacted copy of `.credentials.json` (mode `0600`,
   sourced from the macOS Keychain then `~/.claude/.credentials.json` fallback) and an optional copy
