@@ -36,7 +36,8 @@ implement, fix and test stage prompts (`cat .claude/workflows/agent-rules.md` al
 
 How code is built in this fleet, whatever the language. `/generate-tasks` shapes tasks so these
 can be followed and `/begin-orchestration` checks integrated blocks against them; this section is
-the single authoritative copy — cite it, never restate it.
+the single authoritative copy — cite it, never restate it. The check question for each rule,
+fleet examples and the review checklist are in the `follow-engineering-principles` skill.
 
 - **Config over hard-coding.** Strings, data, and names live in config, not in logic.
 - **Extract the pattern.** If code repeats or varies, make it a function, component, trait, or
