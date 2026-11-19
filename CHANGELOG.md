@@ -4,6 +4,17 @@ All notable changes to this crate are documented here.
 
 ## Unreleased
 
+### Added
+
+- **`Config::pre_tool_use_hooks` carries caller-supplied command PreToolUse hooks into the child's
+  `--settings`.** New `Config::pre_tool_use_hooks: Vec<CommandHook>`, `Config::with_pre_tool_use_hook(matcher,
+  command)` and `CommandHook::new` (matcher and command are caller data; the crate carries no hook
+  path of its own). Hooks render in the caller's order after the deny-list and confine entries; with
+  none configured the `--settings` output is byte-identical to before. New `Error::InvalidCommandHook`
+  variant, returned for an empty matcher or command — callers matching `Error` exhaustively must add
+  an arm. A consumer such as engine-rs must bump its claude-code-rs pin after this is pushed to use
+  the knob.
+
 ### Fixed
 
 - **Isolated calls no longer block a tokio worker thread.** `execute()` with `Config { isolated:
