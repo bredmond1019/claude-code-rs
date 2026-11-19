@@ -54,6 +54,8 @@ fleet examples and the review checklist are in the `follow-engineering-principle
 ## Evidence, not narration
 
 - No fabricated metrics, quotes, or "tests passed" claims without having actually run them.
+- Cite what you report: `path:line` plus symbol, sha, or command and its output (the
+  `cite-your-sources` skill).
 - No emoji anywhere in committed content — a harness rule, always.
 - Every behavior change ships with a real, hermetic test in the same commit.
 - Read source with the Read/Grep/Glob tools, not `cat`/`sed`/`grep` over Bash — a Bash result stays
