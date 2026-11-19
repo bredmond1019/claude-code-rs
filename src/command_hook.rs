@@ -49,8 +49,6 @@ impl CommandHook {
     }
 
     /// The `PreToolUse` entry, shaped like the deny-list and confine entries.
-    // Consumed by `settings::cli_settings` in the next task of this block.
-    #[allow(dead_code)]
     pub(crate) fn hook_entry(&self) -> Value {
         json!({
             "matcher": self.matcher,

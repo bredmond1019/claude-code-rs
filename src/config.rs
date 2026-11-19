@@ -262,17 +262,38 @@ pub struct Config {
     /// (the `#[derive(Default)]` value) uses the built-in `DEFAULT_GROUP_KILL_GRACE` of 5
     /// seconds; `Some(duration)` overrides it.
     pub group_kill_grace: Option<Duration>,
+
+    /// Caller-supplied command `PreToolUse` hooks, rendered into the single `--settings` object
+    /// after the deny-list and allow-root entries, in this order. Empty (the default) leaves the
+    /// output unchanged. Build entries with [`Config::with_pre_tool_use_hook`] or
+    /// [`CommandHook::new`](crate::command_hook::CommandHook::new).
+    pub pre_tool_use_hooks: Vec<crate::command_hook::CommandHook>,
 }
 
 impl Config {
+    /// Append a command `PreToolUse` hook (`matcher`, `command`), refusing a blank matcher or
+    /// command with [`crate::Error::InvalidCommandHook`].
+    ///
+    /// # Errors
+    /// Returns [`crate::Error::InvalidCommandHook`] when `matcher` or `command` is blank.
+    pub fn with_pre_tool_use_hook(
+        mut self,
+        matcher: impl Into<String>,
+        command: impl Into<String>,
+    ) -> crate::Result<Self> {
+        self.pre_tool_use_hooks
+            .push(crate::command_hook::CommandHook::new(matcher, command)?);
+        Ok(self)
+    }
+
     /// Build the exact argv (excluding the binary itself) for a single `claude` call.
     ///
     /// Order: `-p <prompt>`, `--system-prompt`, `--append-system-prompt`, `--model`,
     /// `--allowedTools` (repeated), `--disallowedTools` (repeated), `--continue`,
     /// `--resume <id>`, `--dangerously-skip-permissions`, `--permission-mode <mode>`,
     /// `--json-schema <json>`, `--max-turns <n>`, `--setting-sources=<list>`,
-    /// `--settings <json>` (only when `denied_path_patterns`, `confine_to` or `endpoint`
-    /// is set), then always `--output-format json`.
+    /// `--settings <json>` (only when `denied_path_patterns`, `confine_to`, `endpoint`
+    /// or `pre_tool_use_hooks` is set), then always `--output-format json`.
     #[must_use]
     pub fn build_args(&self, prompt: &str) -> Vec<String> {
         let mut args = Vec::new();
