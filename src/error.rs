@@ -105,6 +105,14 @@ pub enum Error {
         "dangerously_skip_permissions and permission_mode are mutually exclusive — set at most one"
     )]
     ConflictingPermissions,
+
+    /// A [`crate::command_hook::CommandHook`] was built with an empty matcher or command.
+    /// `field` is `"matcher"` or `"command"`.
+    #[error("command hook {field} must not be empty")]
+    InvalidCommandHook {
+        /// Which field was empty.
+        field: &'static str,
+    },
 }
 
 /// Crate-wide `Result` alias using [`Error`].

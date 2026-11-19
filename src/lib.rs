@@ -6,6 +6,7 @@ mod permission_hook;
 mod process_group;
 mod settings;
 
+pub mod command_hook;
 pub mod config;
 pub mod confine;
 pub mod endpoint;
@@ -13,6 +14,7 @@ pub mod execute;
 pub mod isolation;
 pub mod parse;
 
+pub use command_hook::CommandHook;
 pub use config::{Config, ParsePermissionModeError, PermissionMode};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
